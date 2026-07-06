@@ -34,6 +34,7 @@ Pynter implements most of Source §3, except:
 
 - Numbers are single-precision floating points. This means that
   `16777216 + 1 === 16777216`.
+- Pynter does not support Python's complex numbers.
 - The following primitives are not supported:
   - list_to_string
   - parse_int
