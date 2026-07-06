@@ -12,9 +12,11 @@ Pynter and its bytecode format, PVML, are unmodified copies of Sinter/SVML; the 
 [py-slang](https://github.com/source-academy/py-slang) to compile its Python variant (SICPy) to
 PVML and run it on Pynter, diverging from SVML/Sinter only where Python's semantics actually need
 it. We currently still follow the [Source VM specification](https://github.com/source-academy/js-slang/wiki/SVML-Specification)
-as in the js-slang wiki (mirrored, and where PVML has started to diverge, updated, in
-[py-slang's `docs/pvml/`](https://github.com/source-academy/py-slang/tree/main/docs/pvml)) and use
-the [SVML reference compiler in js-slang](https://github.com/source-academy/js-slang/blob/master/src/vm/svmc.ts).
+as in the js-slang wiki (mirrored, and where PVML has started to diverge, updated, in the
+[py-slang wiki](https://github.com/source-academy/py-slang/wiki), forked as
+[PVML-Specification](https://github.com/source-academy/py-slang/wiki/PVML-Specification) and
+[PVML-Instruction-Set](https://github.com/source-academy/py-slang/wiki/PVML-Instruction-Set)) and
+use the [SVML reference compiler in js-slang](https://github.com/source-academy/js-slang/blob/master/src/vm/svmc.ts).
 
 For implementation details, see [here](vm/docs/impl.md).
 
