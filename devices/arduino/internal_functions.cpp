@@ -2,12 +2,12 @@
 
 #include <cstdint>
 
-#include <sinter/vm.h>
-#include <sinter.h>
+#include <pynter/vm.h>
+#include <pynter.h>
 
 #define CHECK_ARGS(n) do { \
   if (argc < n) { \
-    sifault(sinter_fault_function_arity); \
+    sifault(pynter_fault_function_arity); \
   } \
 } while (0)
 
@@ -22,7 +22,7 @@ static inline int nanboxToInt(sinanbox_t v) {
   } else if (NANBOX_ISFLOAT(v)) {
     return static_cast<int>(NANBOX_FLOAT(v));
   } else {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
   }
 
   return 0;
@@ -31,7 +31,7 @@ static inline int nanboxToInt(sinanbox_t v) {
 static inline unsigned int nanboxToUint(sinanbox_t v) {
   int r = nanboxToInt(v);
   if (r < 0) {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
   }
   return static_cast<unsigned int>(r);
 }
@@ -46,7 +46,7 @@ static sinanbox_t digital_read(uint8_t argc, sinanbox_t *argv) {
 static sinanbox_t digital_write(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGS(2);
   if (!NANBOX_ISBOOL(argv[1])) {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
   }
   int pin = nanboxToUint(argv[0]);
   bool high = NANBOX_BOOL(argv[1]);
@@ -61,7 +61,7 @@ static sinanbox_t pin_mode(uint8_t argc, sinanbox_t *argv) {
   unsigned int pin = nanboxToUint(argv[0]);
   unsigned int mode = nanboxToUint(argv[1]);
   if (mode > sizeof(modeArg)/sizeof(*modeArg)) {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
   }
 
   pinMode(pin, modeArg[mode]);

@@ -1,22 +1,22 @@
-#include <sinter/config.h>
-#include <sinter/vm.h>
-#include <sinter/heap.h>
-#include <sinter/stack.h>
-#include <sinter/heap_obj.h>
-#include <sinter/debug.h>
-#include <sinter/debug_heap.h>
+#include <pynter/config.h>
+#include <pynter/vm.h>
+#include <pynter/heap.h>
+#include <pynter/stack.h>
+#include <pynter/heap_obj.h>
+#include <pynter/debug.h>
+#include <pynter/debug_heap.h>
 
-#if defined(SINTER_DEBUG_MEMORY_CHECK) && !defined(NDEBUG)
+#if defined(PYNTER_DEBUG_MEMORY_CHECK) && !defined(NDEBUG)
 /**
  * Do basic sanity checks on the heap, and reset the debug refcount.
  */
 static void debug_memorycheck_walk_do_object_1(siheap_header_t *obj) {
   // either the next object is within the heap, or this object is the last object of the heap
-  assert(SIHEAP_INRANGE(siheap_next(obj)) || ((unsigned char *) obj) + obj->size == siheap + SINTER_HEAP_SIZE);
+  assert(SIHEAP_INRANGE(siheap_next(obj)) || ((unsigned char *) obj) + obj->size == siheap + PYNTER_HEAP_SIZE);
   // this object doesn't start before the heap starts
   assert(((unsigned char *) obj) >= siheap);
   // this object ends before the heap ends
-  assert(((unsigned char *) obj) + obj->size <= siheap + SINTER_HEAP_SIZE);
+  assert(((unsigned char *) obj) + obj->size <= siheap + PYNTER_HEAP_SIZE);
   // the next object's prev pointer is correct
   assert(!SIHEAP_INRANGE(siheap_next(obj)) || siheap_next(obj)->prev_node == obj);
 
@@ -140,9 +140,9 @@ static void debug_memorycheck_walk_do_object_2(const siheap_header_t *obj) {
     assert(c->saved_stack_bottom <= c->saved_stack_top);
 
     // check that the saved stack bottom is in the stack
-    assert(c->saved_stack_bottom >= sistack && c->saved_stack_bottom <= sistack + SINTER_STACK_ENTRIES);
+    assert(c->saved_stack_bottom >= sistack && c->saved_stack_bottom <= sistack + PYNTER_STACK_ENTRIES);
     // check that the saved stack limit is in the stack
-    assert(c->saved_stack_limit >= sistack && c->saved_stack_limit <= sistack + SINTER_STACK_ENTRIES);
+    assert(c->saved_stack_limit >= sistack && c->saved_stack_limit <= sistack + PYNTER_STACK_ENTRIES);
 
     if (c->saved_env) {
       c->saved_env->header.debug_refcount++;

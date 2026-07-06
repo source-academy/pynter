@@ -1,5 +1,5 @@
-#ifndef SINTER_VM_H
-#define SINTER_VM_H
+#ifndef PYNTER_VM_H
+#define PYNTER_VM_H
 
 #include "config.h"
 
@@ -11,7 +11,7 @@
 #include "heap_obj.h"
 #include "opcode.h"
 #include "fault.h"
-#include "../sinter.h"
+#include "../pynter.h"
 #include "internal_fn.h"
 
 #ifdef __cplusplus
@@ -20,7 +20,7 @@ extern "C" {
 
 struct sistate {
   volatile bool running;
-  sinter_fault_t fault_reason;
+  pynter_fault_t fault_reason;
   const opcode_t *pc;
   const opcode_t *program;
   const opcode_t *program_end;
@@ -29,11 +29,11 @@ struct sistate {
 
 extern struct sistate sistate;
 
-sinanbox_t __attribute__((warn_unused_result)) siexec(const svm_function_t *fn, siheap_env_t *parent_env, uint8_t argc, sinanbox_t *argv);
+sinanbox_t __attribute__((warn_unused_result)) siexec(const pvm_function_t *fn, siheap_env_t *parent_env, uint8_t argc, sinanbox_t *argv);
 
-SINTER_INLINEIFC __attribute__((warn_unused_result)) sinanbox_t siexec_nanbox(sinanbox_t fn, uint8_t argc, sinanbox_t *argv);
+PYNTER_INLINEIFC __attribute__((warn_unused_result)) sinanbox_t siexec_nanbox(sinanbox_t fn, uint8_t argc, sinanbox_t *argv);
 #ifndef __cplusplus
-SINTER_INLINEIFC __attribute__((warn_unused_result)) sinanbox_t siexec_nanbox(sinanbox_t fn, uint8_t argc, sinanbox_t *argv) {
+PYNTER_INLINEIFC __attribute__((warn_unused_result)) sinanbox_t siexec_nanbox(sinanbox_t fn, uint8_t argc, sinanbox_t *argv) {
   if (NANBOX_ISIFN(fn)) {
     uint8_t ifn = NANBOX_IFN_NUMBER(fn);
     sinanbox_t ret = NANBOX_OFEMPTY();
@@ -43,7 +43,7 @@ SINTER_INLINEIFC __attribute__((warn_unused_result)) sinanbox_t siexec_nanbox(si
     } else if (!NANBOX_IFN_TYPE(fn) && ifn < SIVMFN_PRIMITIVE_COUNT) {
       ret = sivmfn_primitives[ifn](argc, argv);
     } else {
-      sifault(sinter_fault_invalid_program);
+      sifault(pynter_fault_invalid_program);
       return NANBOX_OFEMPTY();
     }
     for (size_t i = 0; i < argc; ++i) {
@@ -72,11 +72,11 @@ SINTER_INLINEIFC __attribute__((warn_unused_result)) sinanbox_t siexec_nanbox(si
     case sitype_array_data:
     case sitype_free:
     default:
-      sifault(sinter_fault_type);
+      sifault(pynter_fault_type);
       return NANBOX_OFEMPTY();
     }
   } else {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
     return NANBOX_OFEMPTY();
   }
 }
@@ -93,4 +93,4 @@ void sistop(void);
 }
 #endif
 
-#endif // SINTER_VM_H
+#endif // PYNTER_VM_H

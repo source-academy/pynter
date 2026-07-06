@@ -1,27 +1,27 @@
-#include <sinter/config.h>
+#include <pynter/config.h>
 
 #include <string.h>
 
-#include <sinter/heap.h>
-#include <sinter/heap_obj.h>
-#include <sinter/stack.h>
-#include <sinter/vm.h>
-#include <sinter/nanbox.h>
+#include <pynter/heap.h>
+#include <pynter/heap_obj.h>
+#include <pynter/stack.h>
+#include <pynter/vm.h>
+#include <pynter/nanbox.h>
 
-#ifdef SINTER_STATIC_HEAP
-unsigned char siheap[SINTER_HEAP_SIZE] = { 0 };
+#ifdef PYNTER_STATIC_HEAP
+unsigned char siheap[PYNTER_HEAP_SIZE] = { 0 };
 #else
 unsigned char *siheap = NULL;
 size_t siheap_size = 0;
 #endif
 
-#ifdef SINTER_DEBUG
+#ifdef PYNTER_DEBUG
 bool siheap_sweeping = 0;
 #endif
 
 siheap_free_t *siheap_first_free = NULL;
 
-sinanbox_t sistack[SINTER_STACK_ENTRIES];
+sinanbox_t sistack[PYNTER_STACK_ENTRIES];
 
 sinanbox_t *sistack_bottom = sistack;
 sinanbox_t *sistack_limit = sistack;
@@ -82,7 +82,7 @@ static void siheap_mark(siheap_header_t *vent) {
   }
 
   if (!vent->flag_marked) {
-#if SINTER_DEBUG_LOGLEVEL >= 2
+#if PYNTER_DEBUG_LOGLEVEL >= 2
     SIDEBUG("Marking object ");
     SIDEBUG_HEAPOBJ(vent);
     SIDEBUG("\n");
@@ -147,14 +147,14 @@ static void siheap_mark(siheap_header_t *vent) {
 }
 
 static inline void siheap_sweep(void) {
-#ifdef SINTER_DEBUG
+#ifdef PYNTER_DEBUG
   siheap_sweeping = 1;
 #endif
   siheap_header_t *curr = (siheap_header_t *) siheap;
   while (SIHEAP_INRANGE(curr)) {
     if (!curr->flag_marked && curr->type != sitype_free) {
       curr->refcount = 0;
-#if SINTER_DEBUG_LOGLEVEL >= 2
+#if PYNTER_DEBUG_LOGLEVEL >= 2
       SIDEBUG("Sweeping object ");
       SIDEBUG_HEAPOBJ(curr);
       SIDEBUG("\n");
@@ -165,7 +165,7 @@ static inline void siheap_sweep(void) {
     }
     curr = siheap_next(curr);
   }
-#ifdef SINTER_DEBUG
+#ifdef PYNTER_DEBUG
   siheap_sweeping = 0;
 #endif
 }
@@ -212,7 +212,7 @@ static address_t sizeof_strobj(siheap_header_t *obj) {
   case sitype_function:
   default:
     SIBUGM("Unknown string type\n");
-    sifault(sinter_fault_internal_error);
+    sifault(pynter_fault_internal_error);
     break;
   }
 }
@@ -255,7 +255,7 @@ static void write_strobj(siheap_header_t *obj, char **to) {
   case sitype_function:
   default:
     SIBUGM("Unknown string type\n");
-    sifault(sinter_fault_internal_error);
+    sifault(pynter_fault_internal_error);
     break;
   }
 }
@@ -303,7 +303,7 @@ siheap_header_t *siheap_mrealloc(siheap_header_t *ent, address_t newsize) {
   // the next block is not free and/or not large enough
 
   // store the type, refcount and size of the current block
-#ifdef SINTER_DEBUG_MEMORY_CHECK
+#ifdef PYNTER_DEBUG_MEMORY_CHECK
   uint16_t orig_internal_refcount = ent->internal_refcount;
 #endif
   siheap_type_t orig_type = ent->type;
@@ -333,7 +333,7 @@ siheap_header_t *siheap_mrealloc(siheap_header_t *ent, address_t newsize) {
   }
   // restore the refcount
   new_alloc->refcount = orig_refcount;
-#ifdef SINTER_DEBUG_MEMORY_CHECK
+#ifdef PYNTER_DEBUG_MEMORY_CHECK
   new_alloc->internal_refcount = orig_internal_refcount;
 #endif
 

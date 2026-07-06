@@ -1,13 +1,13 @@
-import sinterwasm from "../../build/sinterwasm.js";
-import sinterwasmModule from "../../build/sinterwasm.wasm";
+import pynterwasm from "../../build/pynterwasm.js";
+import pynterwasmModule from "../../build/pynterwasm.wasm";
 
 // Adapted from https://gist.github.com/surma/b2705b6cca29357ebea1c9e6e15684cc
 
 const future = async (props) => {
-  const module = await sinterwasm({
+  const module = await pynterwasm({
     locateFile(path) {
       if (path.endsWith(".wasm")) {
-        return sinterwasmModule;
+        return pynterwasmModule;
       }
       return path;
     },

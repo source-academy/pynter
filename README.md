@@ -1,10 +1,20 @@
-# Sinter
+# Pynter
 
-[![Coverage Status](https://coveralls.io/repos/github/source-academy/sinter/badge.svg?branch=master)](https://coveralls.io/github/source-academy/sinter?branch=master)
+[![Coverage Status](https://coveralls.io/repos/github/source-academy/pynter/badge.svg?branch=master)](https://coveralls.io/github/source-academy/pynter?branch=master)
 
-Name etymology: <strong>S</strong>VML <strong>inter</strong>preter.
+Name etymology: portmanteau of <strong>Py</strong>thon and Si<strong>nter</strong>.
 
-This is an implementation of the Source Virtual Machine Language intended for microcontroller platforms like an Arduino. We follow the [Source VM specification](https://github.com/source-academy/js-slang/wiki/SVML-Specification) as in the js-slang wiki. Use this VM with the [reference compiler](https://github.com/source-academy/js-slang/blob/master/src/vm/svmc.ts).
+Pynter is a fork of [Sinter](https://github.com/source-academy/sinter) — an implementation of the
+Source Virtual Machine Language (SVML) intended for microcontroller platforms like an Arduino — kept
+as a separate sister project so that giving the VM Python-specific semantics doesn't risk
+destabilizing Sinter, which remains the fallback engine for the Source curriculum. As of this fork,
+Pynter and its bytecode format, PVML, are unmodified copies of Sinter/SVML; the plan is for
+[py-slang](https://github.com/source-academy/py-slang) to compile its Python variant (SICPy) to
+PVML and run it on Pynter, diverging from SVML/Sinter only where Python's semantics actually need
+it. We currently still follow the [Source VM specification](https://github.com/source-academy/js-slang/wiki/SVML-Specification)
+as in the js-slang wiki (mirrored, and where PVML has started to diverge, updated, in
+[py-slang's `docs/pvml/`](https://github.com/source-academy/py-slang/tree/main/docs/pvml)) and use
+the [SVML reference compiler in js-slang](https://github.com/source-academy/js-slang/blob/master/src/vm/svmc.ts).
 
 For implementation details, see [here](vm/docs/impl.md).
 
@@ -13,12 +23,12 @@ For implementation details, see [here](vm/docs/impl.md).
 - `vm`: The actual VM library.
 - `vm/test`: Some scripts to aid with CI testing.
 - `runner`: A simple runner to run programs from the CLI.
-- `test_programs`: SVML test programs that have been manually verified to be correct, as well as expected output for automated tests.
-- `devices`: Some examples for using Sinter on various embedded platforms.
+- `test_programs`: PVML test programs that have been manually verified to be correct, as well as expected output for automated tests.
+- `devices`: Some examples for using Pynter on various embedded platforms.
 
 ## Usage notes
 
-Sinter implements most of Source §3, except:
+Pynter implements most of Source §3, except:
 
 - Numbers are single-precision floating points. This means that
   `16777216 + 1 === 16777216`.
@@ -32,11 +42,11 @@ Sinter implements most of Source §3, except:
 Usage recommendations:
 
 - Treat arrays like C arrays, rather than JavaScript arrays (which are actually
-  maps). Sinter does not (yet) have optimisations for sparse arrays.
+  maps). Pynter does not (yet) have optimisations for sparse arrays.
 
 ## Use it on a device
 
-Sinter is a C library. For examples on how to use Sinter, see [the CLI
+Pynter is a C library. For examples on how to use Pynter, see [the CLI
 runner](runner/src/runner.c), [the Arduino sketch
 example](devices/arduino/arduino.ino), or the [ESP32
 example](devices/esp32/src/main.c). There is also a [WASM example](devices/wasm).
@@ -44,7 +54,7 @@ example](devices/esp32/src/main.c). There is also a [WASM example](devices/wasm)
 To create an Arduino library zip, run the script
 [`make_arduino_lib.sh`](make_arduino_lib.sh). You can configure the Arduino
 library by unzipping the zip and modifying
-[`sinter_config.h`](include/sinter_config.h).
+[`pynter_config.h`](include/pynter_config.h).
 
 ## Build locally
 
@@ -57,14 +67,14 @@ mkdir build && cd build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j8
 make test
-runner/runner ../test_programs/hello_world.svm
+runner/runner ../test_programs/hello_world.pvm
 ```
 
 ### Compiling your own programs
 
-Use the [SVML compiler CLI utility in js-slang](https://github.com/source-academy/js-slang/blob/master/src/vm/svmc.ts) to compile programs for testing. (A real deployment of Sinter would integrate the compiler in js-slang directly instead.)
+Use the [SVML compiler CLI utility in js-slang](https://github.com/source-academy/js-slang/blob/master/src/vm/svmc.ts) to compile programs for testing — this still produces SVML, which is what PVML currently is byte-for-byte. (A real deployment of Pynter would integrate a compiler directly instead.)
 
-Alternatively, you could also try the [web demo](https://angelsl.github.io/sinter/), which uses Sinter compiled to WASM.
+Alternatively, you could also try the [web demo](https://source-academy.github.io/pynter/) (not yet deployed under this name), which uses Pynter compiled to WASM.
 
 For convenience, we have included a NPM package that exposes the CLI utility.
 
@@ -76,8 +86,8 @@ Try it out:
 cd tools/compiler
 yarn install
 echo 'display("Hello world");' > myprogram.js
-node svmc.js myprogram.js
-../../build/runner/runner myprogram.svm
+node pvmc.js myprogram.js
+../../build/runner/runner myprogram.pvm
 # (or wherever the test runner binary is)
 ```
 
@@ -90,17 +100,17 @@ Some configuration is available via CMake defines:
   - `Debug`: assertions are enabled; some extra checks are enabled; `-Og` optimisation level
   - `Release`: assertions are disabled; `-O2` optimisation level
 
-- `SINTER_HEAP_SIZE`: size in bytes of the statically-allocated heap; defaults
+- `PYNTER_HEAP_SIZE`: size in bytes of the statically-allocated heap; defaults
   to `0x10000` i.e. 64 KB
 
-- `SINTER_STACK_ENTRIES`: size in stack entries of the statically-allocated
+- `PYNTER_STACK_ENTRIES`: size in stack entries of the statically-allocated
   stack; defaults to `0x200` i.e. 512
 
-- `SINTER_DISABLE_CHECKS`: if `1`, disables certain safety checks in the runtime
+- `PYNTER_DISABLE_CHECKS`: if `1`, disables certain safety checks in the runtime
   e.g. stack over/underflow checks; defaults to unset (i.e. safety checks are
   performed)
 
-- `SINTER_DEBUG_LOGLEVEL`: controls the debug output level; defaults to `0`
+- `PYNTER_DEBUG_LOGLEVEL`: controls the debug output level; defaults to `0`
 
   - `0`: all debug output is disabled.
   - `1`: prints reasons for most faults/errors
@@ -113,11 +123,11 @@ Some configuration is available via CMake defines:
   be relaxed in future so the library consumer can provide a logging function
   instead.)
 
-- `SINTER_DEBUG_ABORT_ON_FAULT`: if `1`, raises an assertion failure when a
+- `PYNTER_DEBUG_ABORT_ON_FAULT`: if `1`, raises an assertion failure when a
   fault occurs. (Intended for use when debugging under e.g. GDB.) Defaults to
   unset.
 
-- `SINTER_DEBUG_MEMORY_CHECK`: if `1`, does _a lot_ of checks at every
+- `PYNTER_DEBUG_MEMORY_CHECK`: if `1`, does _a lot_ of checks at every
   instruction to verify the correctness of the heap linked list, freelist,
   stack, and reference counting. Note: this slows down execution severely.
   Defaults to unset.

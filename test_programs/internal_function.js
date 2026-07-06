@@ -1,2 +1,2 @@
-// compile with svmc -i '["hello_world"]'
+// compile with pvmc -i '["hello_world"]'
 hello_world();

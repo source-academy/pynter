@@ -1,13 +1,13 @@
 {
-  "name": "svmc",
+  "name": "pvmc",
   "version": "0.0.1",
   "main": "index.js",
   "license": "Apache-2.0",
   "dependencies": {
     "js-slang": "^0.4.70"
   },
-  "bin": "./svmc.js",
+  "bin": "./pvmc.js",
   "scripts": {
-    "start": "node svmc.js"
+    "start": "node pvmc.js"
   }
 }

@@ -1,6 +1,6 @@
-# Sinter WASM
+# Pynter WASM
 
-This is a demo of Sinter on WASM.
+This is a demo of Pynter on WASM.
 
 ## Building
 

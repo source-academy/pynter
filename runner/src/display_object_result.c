@@ -1,11 +1,11 @@
-#include <sinter/vm.h>
-#include <sinter/program.h>
-#include <sinter/heap_obj.h>
-#include <sinter/display.h>
-#include <sinter.h>
+#include <pynter/vm.h>
+#include <pynter/program.h>
+#include <pynter/heap_obj.h>
+#include <pynter/display.h>
+#include <pynter.h>
 
-void display_object_result(sinter_value_t *res, _Bool is_error) {
-  if (res->type == sinter_type_array || res->type == sinter_type_function) {
+void display_object_result(pynter_value_t *res, _Bool is_error) {
+  if (res->type == pynter_type_array || res->type == pynter_type_function) {
     sinanbox_t arr = NANBOX_WITH_I32(res->object_value);
     sidisplay_nanbox(arr, is_error);
   }

@@ -1,26 +1,26 @@
-#ifndef SINTER_DISPLAY_H
-#define SINTER_DISPLAY_H
+#ifndef PYNTER_DISPLAY_H
+#define PYNTER_DISPLAY_H
 
 #include "config.h"
 #include "nanbox.h"
 #include "heap.h"
 #include "heap_obj.h"
-#include "../sinter.h"
+#include "../pynter.h"
 
 #ifndef __cplusplus
 #define SIVMFN_PRINTFN(v) (_Generic((v), \
-  char *: sinter_printer_string, \
-  const char *: sinter_printer_string, \
-  float: sinter_printer_float, \
-  int32_t: sinter_printer_integer))
+  char *: pynter_printer_string, \
+  const char *: pynter_printer_string, \
+  float: pynter_printer_float, \
+  int32_t: pynter_printer_integer))
 #define SIVMFN_PRINT(v, is_error) do { \
   if (SIVMFN_PRINTFN(v)) SIVMFN_PRINTFN(v)((v), (is_error)); \
 } while (0)
 #endif
 
-SINTER_INLINEIFC void sidisplay_strobj(siheap_header_t *obj, bool is_error);
+PYNTER_INLINEIFC void sidisplay_strobj(siheap_header_t *obj, bool is_error);
 #ifndef __cplusplus
-SINTER_INLINEIFC void sidisplay_strobj(siheap_header_t *obj, _Bool is_error) {
+PYNTER_INLINEIFC void sidisplay_strobj(siheap_header_t *obj, _Bool is_error) {
   switch (obj->type) {
   case sitype_strconst:
     SIVMFN_PRINT((const char *) ((siheap_strconst_t *) obj)->string->data, is_error);
@@ -52,9 +52,9 @@ SINTER_INLINEIFC void sidisplay_strobj(siheap_header_t *obj, _Bool is_error) {
 }
 #endif
 
-SINTER_INLINEIFC void sidisplay_nanbox(sinanbox_t v, bool is_error);
+PYNTER_INLINEIFC void sidisplay_nanbox(sinanbox_t v, bool is_error);
 #ifndef __cplusplus
-SINTER_INLINEIFC void sidisplay_nanbox(sinanbox_t v, bool is_error) {
+PYNTER_INLINEIFC void sidisplay_nanbox(sinanbox_t v, bool is_error) {
   switch (NANBOX_GETTYPE(v)) {
   NANBOX_CASES_TINT
     SIVMFN_PRINT((int32_t) NANBOX_INT(v), is_error);

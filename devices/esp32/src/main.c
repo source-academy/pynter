@@ -4,7 +4,7 @@
 #include <driver/uart.h>
 #include <esp_system.h>
 #include <esp_vfs_dev.h>
-#include <sinter.h>
+#include <pynter.h>
 
 static _Noreturn void app_exit(void) {
   printf("Restarting now.\n");
@@ -22,7 +22,7 @@ void app_main(void) {
   setvbuf(stdin, NULL, _IONBF, 0);
   setvbuf(stdout, NULL, _IONBF, 0);
 
-  printf("Sinter ESP32 runner.\n");
+  printf("Pynter ESP32 runner.\n");
   uint32_t binary_size = 0;
 
   if (fread(&binary_size, 1, sizeof(uint32_t), stdin) != 4) {
@@ -50,8 +50,8 @@ void app_main(void) {
     app_exit();
   }
 
-  sinter_value_t result;
-  sinter_fault_t fault = sinter_run(binary, binary_size, &result);
+  pynter_value_t result;
+  pynter_fault_t fault = pynter_run(binary, binary_size, &result);
 
   printf("Program exited with fault %d and result type %d (%d, %d, %f)\n", fault, result.type, result.integer_value, result.boolean_value, result.float_value);
   app_exit();

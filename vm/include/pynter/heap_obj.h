@@ -1,5 +1,5 @@
-#ifndef SINTER_HEAP_OBJ_H
-#define SINTER_HEAP_OBJ_H
+#ifndef PYNTER_HEAP_OBJ_H
+#define PYNTER_HEAP_OBJ_H
 
 #include "config.h"
 #include "opcode.h"
@@ -30,11 +30,11 @@ typedef struct siheap_env {
  *
  * This increments the reference count on the parent environment, if any.
  */
-SINTER_INLINEIFC siheap_env_t *sienv_new(
+PYNTER_INLINEIFC siheap_env_t *sienv_new(
   siheap_env_t *parent,
   const uint16_t entry_count);
 #ifndef __cplusplus
-SINTER_INLINEIFC siheap_env_t *sienv_new(
+PYNTER_INLINEIFC siheap_env_t *sienv_new(
   siheap_env_t *parent,
   const uint16_t entry_count) {
   siheap_env_t *env = (siheap_env_t *) siheap_malloc(SIENV_SIZE(entry_count), sitype_env);
@@ -51,9 +51,9 @@ SINTER_INLINEIFC siheap_env_t *sienv_new(
 }
 #endif
 
-SINTER_INLINEIFC void sienv_destroy(siheap_env_t *const env);
+PYNTER_INLINEIFC void sienv_destroy(siheap_env_t *const env);
 #ifndef __cplusplus
-SINTER_INLINEIFC void sienv_destroy(siheap_env_t *const env) {
+PYNTER_INLINEIFC void sienv_destroy(siheap_env_t *const env) {
   for (size_t i = 0; i < env->entry_count; ++i) {
     siheap_derefbox(env->entry[i]);
   }
@@ -68,12 +68,12 @@ SINTER_INLINEIFC void sienv_destroy(siheap_env_t *const env) {
  *
  * Note: the caller is responsible for incrementing the reference count, if needed.
  */
-SINTER_INLINEIFC sinanbox_t sienv_get(siheap_env_t *const env, const uint16_t index);
+PYNTER_INLINEIFC sinanbox_t sienv_get(siheap_env_t *const env, const uint16_t index);
 #ifndef __cplusplus
-SINTER_INLINEIFC sinanbox_t sienv_get(siheap_env_t *const env, const uint16_t index) {
-#ifndef SINTER_DISABLE_CHECKS
+PYNTER_INLINEIFC sinanbox_t sienv_get(siheap_env_t *const env, const uint16_t index) {
+#ifndef PYNTER_DISABLE_CHECKS
   if (index >= env->entry_count) {
-    sifault(sinter_fault_invalid_load);
+    sifault(pynter_fault_invalid_load);
     return NANBOX_OFEMPTY();
   }
 #endif
@@ -90,13 +90,13 @@ SINTER_INLINEIFC sinanbox_t sienv_get(siheap_env_t *const env, const uint16_t in
  * Note: the caller "passes" its reference to the environment. That is, the caller should increment the reference
  * count of the heap object (if the value is a pointer) if it is going to continue holding on to the value.
  */
-SINTER_INLINEIFC void sienv_put(siheap_env_t *const env, const uint16_t index, const sinanbox_t val);
+PYNTER_INLINEIFC void sienv_put(siheap_env_t *const env, const uint16_t index, const sinanbox_t val);
 
 #ifndef __cplusplus
-SINTER_INLINEIFC void sienv_put(siheap_env_t *const env, const uint16_t index, const sinanbox_t val) {
-#ifndef SINTER_DISABLE_CHECKS
+PYNTER_INLINEIFC void sienv_put(siheap_env_t *const env, const uint16_t index, const sinanbox_t val) {
+#ifndef PYNTER_DISABLE_CHECKS
   if (index >= env->entry_count) {
-    sifault(sinter_fault_invalid_load);
+    sifault(pynter_fault_invalid_load);
     return;
   }
 #endif
@@ -106,9 +106,9 @@ SINTER_INLINEIFC void sienv_put(siheap_env_t *const env, const uint16_t index, c
 }
 #endif
 
-SINTER_INLINEIFC siheap_env_t *sienv_getparent(siheap_env_t *env, unsigned int index);
+PYNTER_INLINEIFC siheap_env_t *sienv_getparent(siheap_env_t *env, unsigned int index);
 #ifndef __cplusplus
-SINTER_INLINEIFC siheap_env_t *sienv_getparent(siheap_env_t *env, unsigned int index) {
+PYNTER_INLINEIFC siheap_env_t *sienv_getparent(siheap_env_t *env, unsigned int index) {
   while (env && index--) {
     env = env->parent;
   }
@@ -118,11 +118,11 @@ SINTER_INLINEIFC siheap_env_t *sienv_getparent(siheap_env_t *env, unsigned int i
 
 typedef struct {
   siheap_header_t header;
-  const svm_function_t *code;
+  const pvm_function_t *code;
   siheap_env_t *env;
 } siheap_function_t;
 
-SINTER_INLINE siheap_function_t *sifunction_new(const svm_function_t *code, siheap_env_t *parent_env) {
+PYNTER_INLINE siheap_function_t *sifunction_new(const pvm_function_t *code, siheap_env_t *parent_env) {
   siheap_function_t *fn = (siheap_function_t *) siheap_malloc(sizeof(siheap_function_t), sitype_function);
   fn->code = code;
   fn->env = parent_env;
@@ -131,7 +131,7 @@ SINTER_INLINE siheap_function_t *sifunction_new(const svm_function_t *code, sihe
   return fn;
 }
 
-SINTER_INLINE void sifunction_destroy(siheap_function_t *fn) {
+PYNTER_INLINE void sifunction_destroy(siheap_function_t *fn) {
   if (fn->env) {
     siheap_deref(fn->env);
   }
@@ -146,17 +146,17 @@ typedef struct {
   siheap_env_t *saved_env;
 } siheap_frame_t;
 
-SINTER_INLINE siheap_frame_t *siframe_new(void) {
+PYNTER_INLINE siheap_frame_t *siframe_new(void) {
   return (siheap_frame_t *) siheap_malloc(
     sizeof(siheap_frame_t), sitype_frame);
 }
 
 typedef struct {
   siheap_header_t header;
-  const svm_constant_t *string;
+  const pvm_constant_t *string;
 } siheap_strconst_t;
 
-SINTER_INLINE siheap_strconst_t *sistrconst_new(const svm_constant_t *string) {
+PYNTER_INLINE siheap_strconst_t *sistrconst_new(const pvm_constant_t *string) {
   siheap_strconst_t *obj = (siheap_strconst_t *) siheap_malloc(sizeof(siheap_strconst_t), sitype_strconst);
   obj->string = string;
 
@@ -174,7 +174,7 @@ typedef struct {
  *
  * The refcount of left and right are incremented.
  */
-SINTER_INLINE siheap_strpair_t *sistrpair_new(siheap_header_t *left, siheap_header_t *right) {
+PYNTER_INLINE siheap_strpair_t *sistrpair_new(siheap_header_t *left, siheap_header_t *right) {
   siheap_strpair_t *obj = (siheap_strpair_t *) siheap_malloc(sizeof(siheap_strpair_t), sitype_strpair);
   obj->left = left;
   obj->right = right;
@@ -185,7 +185,7 @@ SINTER_INLINE siheap_strpair_t *sistrpair_new(siheap_header_t *left, siheap_head
   return obj;
 }
 
-SINTER_INLINE void sistrpair_destroy(siheap_strpair_t *obj) {
+PYNTER_INLINE void sistrpair_destroy(siheap_strpair_t *obj) {
   siheap_deref(obj->left);
   if (obj->right) {
     siheap_deref(obj->right);
@@ -203,9 +203,9 @@ typedef struct siheap_string {
 } siheap_string_t;
 #endif
 
-SINTER_INLINEIFC siheap_string_t *sistring_new(address_t size);
+PYNTER_INLINEIFC siheap_string_t *sistring_new(address_t size);
 #ifndef __cplusplus
-SINTER_INLINEIFC siheap_string_t *sistring_new(address_t size) {
+PYNTER_INLINEIFC siheap_string_t *sistring_new(address_t size) {
   siheap_string_t *obj = (siheap_string_t *) siheap_malloc(sizeof(siheap_string_t) + size, sitype_string);
   obj->size = size;
   return obj;
@@ -214,9 +214,9 @@ SINTER_INLINEIFC siheap_string_t *sistring_new(address_t size) {
 
 siheap_string_t *sistrpair_flatten(siheap_strpair_t *obj);
 
-SINTER_INLINEIFC const char *sistrobj_tocharptr(siheap_header_t *obj);
+PYNTER_INLINEIFC const char *sistrobj_tocharptr(siheap_header_t *obj);
 #ifndef __cplusplus
-SINTER_INLINEIFC const char *sistrobj_tocharptr(siheap_header_t *obj) {
+PYNTER_INLINEIFC const char *sistrobj_tocharptr(siheap_header_t *obj) {
   switch (obj->type) {
   case sitype_strconst: {
     siheap_strconst_t *v = (siheap_strconst_t *) obj;
@@ -244,20 +244,20 @@ SINTER_INLINEIFC const char *sistrobj_tocharptr(siheap_header_t *obj) {
   case sitype_intcont:
   default:
     SIBUGM("Unknown string type\n");
-    sifault(sinter_fault_internal_error);
+    sifault(pynter_fault_internal_error);
     break;
   }
 }
 #endif
 
-SINTER_INLINE _Bool siheap_is_string(siheap_header_t *h) {
+PYNTER_INLINE _Bool siheap_is_string(siheap_header_t *h) {
   switch (h->type) {
   case sitype_strconst:
   case sitype_strpair:
     return true;
   case sitype_string:
     SIBUGM("siheap_string_t seen on stack\n");
-    sifault(sinter_fault_internal_error);
+    sifault(pynter_fault_internal_error);
     return false;
   case sitype_array:
   case sitype_array_data:
@@ -289,13 +289,13 @@ typedef struct {
   siheap_array_data_t *data;
 } siheap_array_t;
 
-SINTER_INLINEIFC siheap_array_t *siarray_new(address_t alloc_size);
-SINTER_INLINEIFC sinanbox_t siarray_get(siheap_array_t *array, address_t index);
-SINTER_INLINEIFC void siarray_put(siheap_array_t *array, address_t index, sinanbox_t v);
-SINTER_INLINEIFC void siarray_destroy(siheap_array_t *array);
+PYNTER_INLINEIFC siheap_array_t *siarray_new(address_t alloc_size);
+PYNTER_INLINEIFC sinanbox_t siarray_get(siheap_array_t *array, address_t index);
+PYNTER_INLINEIFC void siarray_put(siheap_array_t *array, address_t index, sinanbox_t v);
+PYNTER_INLINEIFC void siarray_destroy(siheap_array_t *array);
 
 #ifndef __cplusplus
-SINTER_INLINEIFC siheap_array_t *siarray_new(address_t alloc_size) {
+PYNTER_INLINEIFC siheap_array_t *siarray_new(address_t alloc_size) {
   siheap_array_t *array = (siheap_array_t *) siheap_malloc(sizeof(siheap_array_t), sitype_array);
   array->count = 0;
   array->alloc_size = alloc_size;
@@ -308,7 +308,7 @@ SINTER_INLINEIFC siheap_array_t *siarray_new(address_t alloc_size) {
   return array;
 }
 
-SINTER_INLINEIFC sinanbox_t siarray_get(siheap_array_t *array, address_t index) {
+PYNTER_INLINEIFC sinanbox_t siarray_get(siheap_array_t *array, address_t index) {
   if (index >= array->count) {
     return NANBOX_OFUNDEF();
   }
@@ -316,7 +316,7 @@ SINTER_INLINEIFC sinanbox_t siarray_get(siheap_array_t *array, address_t index) 
   return array->data->data[index];
 }
 
-SINTER_INLINEIFC void siarray_put(siheap_array_t *array, address_t index, sinanbox_t v) {
+PYNTER_INLINEIFC void siarray_put(siheap_array_t *array, address_t index, sinanbox_t v) {
   if (index >= array->alloc_size) {
     address_t new_size = array->alloc_size;
     while (new_size && new_size <= index) {
@@ -340,7 +340,7 @@ SINTER_INLINEIFC void siarray_put(siheap_array_t *array, address_t index, sinanb
   }
 }
 
-SINTER_INLINEIFC void siarray_destroy(siheap_array_t *array) {
+PYNTER_INLINEIFC void siarray_destroy(siheap_array_t *array) {
   for (address_t i = 0; i < array->alloc_size; ++i) {
     siheap_derefbox(array->data->data[i]);
   }
@@ -360,18 +360,18 @@ typedef struct siheap_intcont {
 } siheap_intcont_t;
 #endif
 
-SINTER_INLINEIFC siheap_intcont_t *siintcont_new(sivmfnptr_t fn, address_t argc);
-SINTER_INLINEIFC void siintcont_destroy(siheap_intcont_t *ic);
+PYNTER_INLINEIFC siheap_intcont_t *siintcont_new(sivmfnptr_t fn, address_t argc);
+PYNTER_INLINEIFC void siintcont_destroy(siheap_intcont_t *ic);
 
 #ifndef __cplusplus
-SINTER_INLINEIFC siheap_intcont_t *siintcont_new(sivmfnptr_t fn, address_t argc) {
+PYNTER_INLINEIFC siheap_intcont_t *siintcont_new(sivmfnptr_t fn, address_t argc) {
   siheap_intcont_t *ic = (siheap_intcont_t *) siheap_malloc(sizeof(siheap_intcont_t) + argc*sizeof(sinanbox_t), sitype_intcont);
   ic->argc = argc;
   ic->fn = fn;
   return ic;
 }
 
-SINTER_INLINEIFC void siintcont_destroy(siheap_intcont_t *ic) {
+PYNTER_INLINEIFC void siintcont_destroy(siheap_intcont_t *ic) {
   for (address_t i = 0; i < ic->argc; ++i) {
     siheap_derefbox(ic->argv[i]);
   }

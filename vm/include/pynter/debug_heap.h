@@ -1,12 +1,12 @@
-#ifndef SINTER_DEBUG_HEAP_H
-#define SINTER_DEBUG_HEAP_H
+#ifndef PYNTER_DEBUG_HEAP_H
+#define PYNTER_DEBUG_HEAP_H
 
 #include "config.h"
 #include "opcode.h"
 #include "debug.h"
 #include "heap.h"
 
-#if SINTER_DEBUG_LOGLEVEL >= 1
+#if PYNTER_DEBUG_LOGLEVEL >= 1
 #define SIDEBUG_NANBOX(v) debug_nanbox(v)
 #define SIDEBUG_HEAPOBJ(v) debug_heap_obj(v)
 

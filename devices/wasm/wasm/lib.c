@@ -5,9 +5,9 @@
 
 #include <emscripten.h>
 
-#include <sinter/nanbox.h>
-#include <sinter/display.h>
-#include <sinter.h>
+#include <pynter/nanbox.h>
+#include <pynter/display.h>
+#include <pynter.h>
 
 static char *heap = NULL;
 
@@ -39,8 +39,8 @@ static const char *type_names[] = {
   "function"
 };
 
-void display_object_result(sinter_value_t *res, _Bool is_error) {
-  if (res->type == sinter_type_array || res->type == sinter_type_function) {
+void display_object_result(pynter_value_t *res, _Bool is_error) {
+  if (res->type == pynter_type_array || res->type == pynter_type_function) {
     sinanbox_t arr = NANBOX_WITH_I32(res->object_value);
     sidisplay_nanbox(arr, is_error);
   }
@@ -71,10 +71,10 @@ void siwasm_alloc_heap(size_t size) {
   heap = malloc(size);
   if (!heap) {
     fprintf(stderr, "Warning: failed to allocate heap of size %ld; try again\n", size);
-    sinter_setup_heap(0, 0);
+    pynter_setup_heap(0, 0);
     return;
   }
-  sinter_setup_heap(heap, size);
+  pynter_setup_heap(heap, size);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -89,13 +89,13 @@ void siwasm_free(void *ptr) {
 
 EMSCRIPTEN_KEEPALIVE
 void siwasm_run(unsigned char *code, size_t code_size) {
-  sinter_printer_float = print_float;
-  sinter_printer_integer = print_integer;
-  sinter_printer_string = print_string;
-  sinter_printer_flush = print_flush;
+  pynter_printer_float = print_float;
+  pynter_printer_integer = print_integer;
+  pynter_printer_string = print_string;
+  pynter_printer_flush = print_flush;
 
-  sinter_value_t result;
-  sinter_fault_t fault = (uint8_t) sinter_run(code, code_size, &result);
+  pynter_value_t result;
+  pynter_fault_t fault = (uint8_t) pynter_run(code, code_size, &result);
 
   if (fault) {
     printf("Program exited unsuccessfully: %s\n",
@@ -107,26 +107,26 @@ void siwasm_run(unsigned char *code, size_t code_size) {
     result.type >= (sizeof(type_names)/sizeof(type_names[0])) ? "(unknown type)" : type_names[result.type]);
 
   switch (result.type) {
-  case sinter_type_undefined:
+  case pynter_type_undefined:
     printf("undefined");
     break;
-  case sinter_type_null:
+  case pynter_type_null:
     printf("null");
     break;
-  case sinter_type_boolean:
+  case pynter_type_boolean:
     printf("%s", result.boolean_value ? "true" : "false");
     break;
-  case sinter_type_integer:
+  case pynter_type_integer:
     printf("%d", result.integer_value);
     break;
-  case sinter_type_float:
+  case pynter_type_float:
     printf("%f", result.float_value);
     break;
-  case sinter_type_string:
+  case pynter_type_string:
     printf("%s", result.string_value);
     break;
-  case sinter_type_array:
-  case sinter_type_function:
+  case pynter_type_array:
+  case pynter_type_function:
     display_object_result(&result, false);
     break;
   default:

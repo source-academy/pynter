@@ -31,7 +31,7 @@ add_run_test(inf_minus_inf)
 
 add_run_test(prim_is_type)
 add_run_test(prim_is_function_stream)
-if(NOT ${SINTER_TEST_SHORT_DOUBLE})
+if(NOT ${PYNTER_TEST_SHORT_DOUBLE})
   add_run_test(prim_math)
 endif()
 add_run_test(prim_math_lax)

@@ -1,13 +1,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <sinter/vm.h>
-#include <sinter/program.h>
-#include <sinter/heap_obj.h>
-#include <sinter/display.h>
-#include <sinter.h>
+#include <pynter/vm.h>
+#include <pynter/program.h>
+#include <pynter/heap_obj.h>
+#include <pynter/display.h>
+#include <pynter.h>
 
-static svm_constant_t *hello_world_string = NULL;
+static pvm_constant_t *hello_world_string = NULL;
 
 static sinanbox_t hello_world(uint8_t argc, sinanbox_t *argv) {
   (void) argc; (void) argv;
@@ -20,7 +20,7 @@ static const size_t internals_count = sizeof(internals)/sizeof(*internals);
 
 void setup_internals(void) {
   static const char *hello_world_cstr = "Hello world!";
-  hello_world_string = malloc(sizeof(svm_constant_t) + strlen(hello_world_cstr) + 1);
+  hello_world_string = malloc(sizeof(pvm_constant_t) + strlen(hello_world_cstr) + 1);
   hello_world_string->type = 1;
   hello_world_string->length = strlen(hello_world_cstr) + 1;
   strcpy((char *) hello_world_string->data, hello_world_cstr);

@@ -1,8 +1,8 @@
-#include <sinter.h>
+#include <pynter.h>
 
 #include "internal_functions.h"
 
-const unsigned char fact_iterative_34_svm[] = {
+const unsigned char fact_iterative_34_pvm[] = {
   0xad, 0xac, 0x05, 0x50, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x02, 0x01, 0x00, 0x00, 0x28, 0x28, 0x00, 0x00,
   0x00, 0x2d, 0x00, 0x0b, 0x0e, 0x2a, 0x00, 0x02, 0x22, 0x00, 0x00, 0x00,
@@ -14,7 +14,7 @@ const unsigned char fact_iterative_34_svm[] = {
   0x00, 0x02, 0x01, 0x00, 0x00, 0x00, 0x13, 0x2a, 0x01, 0x2a, 0x00, 0x15,
   0x41, 0x02, 0x46
 };
-const unsigned int fact_iterative_34_svm_len = 111;
+const unsigned int fact_iterative_34_pvm_len = 111;
 
 char heap[0x4000];
 
@@ -23,10 +23,10 @@ void setup() {
 }
 
 void loop() {
-  sinter_setup_heap(heap, 0x4000);
+  pynter_setup_heap(heap, 0x4000);
 
-  sinter_value_t result;
-  sinter_fault_t fault = sinter_run(fact_iterative_34_svm, fact_iterative_34_svm_len, &result);
+  pynter_value_t result;
+  pynter_fault_t fault = pynter_run(fact_iterative_34_pvm, fact_iterative_34_pvm_len, &result);
 
   Serial.print("Program exited with fault ");
   Serial.print(fault);

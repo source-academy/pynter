@@ -14,13 +14,13 @@ jobs:
     strategy:
       matrix:
         cmake-args:
-          - -DCMAKE_BUILD_TYPE=Debug -DSINTER_DEBUG_LOGLEVEL=2 -DSINTER_DEBUG_MEMORY_CHECK=1 -DSINTER_COVERAGE=1
-          - -DCMAKE_BUILD_TYPE=Debug -DSINTER_DEBUG_LOGLEVEL=2 -DSINTER_DEBUG_MEMORY_CHECK=1
-          - -DCMAKE_BUILD_TYPE=Debug -DSINTER_DEBUG_LOGLEVEL=2 -DSINTER_DEBUG_MEMORY_CHECK=1 -DSINTER_TEST_SHORT_DOUBLE=1
-          - -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DSINTER_DEBUG_LOGLEVEL=2 -DSINTER_DEBUG_MEMORY_CHECK=1
-          - -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DSINTER_DEBUG_LOGLEVEL=2 -DSINTER_DEBUG_MEMORY_CHECK=1 -DSINTER_TEST_SHORT_DOUBLE=1
+          - -DCMAKE_BUILD_TYPE=Debug -DPYNTER_DEBUG_LOGLEVEL=2 -DPYNTER_DEBUG_MEMORY_CHECK=1 -DPYNTER_COVERAGE=1
+          - -DCMAKE_BUILD_TYPE=Debug -DPYNTER_DEBUG_LOGLEVEL=2 -DPYNTER_DEBUG_MEMORY_CHECK=1
+          - -DCMAKE_BUILD_TYPE=Debug -DPYNTER_DEBUG_LOGLEVEL=2 -DPYNTER_DEBUG_MEMORY_CHECK=1 -DPYNTER_TEST_SHORT_DOUBLE=1
+          - -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DPYNTER_DEBUG_LOGLEVEL=2 -DPYNTER_DEBUG_MEMORY_CHECK=1
+          - -DCMAKE_C_COMPILER=clang -DCMAKE_BUILD_TYPE=Debug -DPYNTER_DEBUG_LOGLEVEL=2 -DPYNTER_DEBUG_MEMORY_CHECK=1 -DPYNTER_TEST_SHORT_DOUBLE=1
           - -DCMAKE_BUILD_TYPE=Release
-          - -DCMAKE_BUILD_TYPE=Release -DSINTER_TEST_SHORT_DOUBLE=1
+          - -DCMAKE_BUILD_TYPE=Release -DPYNTER_TEST_SHORT_DOUBLE=1
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -52,7 +52,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Check if headers work in C++
         working-directory: vm/include
-        run: g++ -std=c++11 -fsyntax-only sinter/*.h sinter.h -I. -Wall -Wextra -pedantic
+        run: g++ -std=c++11 -fsyntax-only pynter/*.h pynter.h -I. -Wall -Wextra -pedantic
   web-demo:
     runs-on: ubuntu-latest
     steps:

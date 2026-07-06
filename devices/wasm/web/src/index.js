@@ -7,7 +7,7 @@ import { parse } from "js-slang/dist/parser/parser";
 import { compileToIns } from "js-slang/dist/vm/svml-compiler";
 import { assemble } from "js-slang/dist/vm/svml-assembler";
 import { stringifyProgram } from "js-slang/dist/vm/util";
-import loadSinterwasm from "./sinterwasm";
+import loadPynterwasm from "./pynterwasm";
 import AceEditor from "react-ace";
 import { saveAs } from "file-saver";
 
@@ -51,12 +51,12 @@ function resizeHeap() {
     onStderr(`Invalid heap size!\n`);
     return;
   }
-  sinterwasm.alloc_heap(newSize);
+  pynterwasm.alloc_heap(newSize);
   onStdout(`Resized heap to ${newSize} bytes.\n`);
 }
 
 let editorCode = `// Shift+Enter to run, just like in Source Academy\n\ndisplay("Hello world!");`;
-let sinterwasm = null;
+let pynterwasm = null;
 
 function formatError(error) {
   const sev = error.severity ? `[${error.severity}] ` : "";
@@ -133,14 +133,14 @@ function run() {
     return;
   }
 
-  const emsMem = sinterwasm.alloc(bin.byteLength);
+  const emsMem = pynterwasm.alloc(bin.byteLength);
   if (!emsMem) {
     onStderr("Failed to allocate WebAssembly memory.\n");
     return;
   }
 
-  sinterwasm.module.HEAPU8.set(bin, emsMem);
-  sinterwasm.run(emsMem, bin.byteLength);
+  pynterwasm.module.HEAPU8.set(bin, emsMem);
+  pynterwasm.run(emsMem, bin.byteLength);
 }
 
 function toAsm() {
@@ -158,17 +158,17 @@ function save() {
   }
 
   const blob = new Blob([bin], { type: "application/octet-stream" });
-  saveAs(blob, "program.svm");
+  saveAs(blob, "program.pvm");
 }
 
-const sinterwasmFuture = loadSinterwasm({
+const pynterwasmFuture = loadPynterwasm({
   print: (str) => onStdout(`${str}\n`),
   printErr: (str) => onStderr(`${str}\n`),
 });
 
-sinterwasmFuture.then((module) => {
+pynterwasmFuture.then((module) => {
   module.alloc_heap(0x10000);
-  sinterwasm = module;
+  pynterwasm = module;
 }, () => {});
 
 export default function App() {
@@ -176,10 +176,10 @@ export default function App() {
   const [follow, setFollow] = useState(scrollOutput);
   const [clear, setClear] = useState(clearBeforeRun);
   useEffect(() => {
-    sinterwasmFuture.then(() => {
+    pynterwasmFuture.then(() => {
       setLoaded(true);
     }, () => {
-      editorCode = "// NOTE: Error loading Sinter WASM module. Check browser console for errors.";
+      editorCode = "// NOTE: Error loading Pynter WASM module. Check browser console for errors.";
       setLoaded(true);
     });
   }, []);
@@ -231,7 +231,7 @@ export default function App() {
           <div id="buttons">
             <button onClick={run}>Run</button>
             <button onClick={toAsm}>Assembly</button>
-            <button onClick={save}>Save SVM</button>
+            <button onClick={save}>Save PVM</button>
             <button onClick={clearOutput}>Clear output</button>
             <button onClick={resizeHeap}>Resize heap</button>
             <button onClick={toggleClear}>{clear ? "☑" : "☐"} Autoclear</button>

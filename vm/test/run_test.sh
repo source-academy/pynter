@@ -3,7 +3,7 @@
 set -o pipefail
 
 runner="$1"
-in_file="$2.svm"
+in_file="$2.pvm"
 out_file="$2.out"
 
 "$runner" "$in_file" | diff -u "$out_file" -

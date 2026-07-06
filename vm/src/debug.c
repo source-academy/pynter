@@ -1,16 +1,16 @@
-#include <sinter/config.h>
+#include <pynter/config.h>
 
 #include <stdio.h>
 #include <inttypes.h>
 
-#include <sinter/nanbox.h>
-#include <sinter/heap.h>
-#include <sinter/vm.h>
-#include <sinter/debug.h>
-#include <sinter/debug_heap.h>
-#include <sinter/heap_obj.h>
+#include <pynter/nanbox.h>
+#include <pynter/heap.h>
+#include <pynter/vm.h>
+#include <pynter/debug.h>
+#include <pynter/debug_heap.h>
+#include <pynter/heap_obj.h>
 
-#if SINTER_DEBUG_LOGLEVEL >= 1
+#if PYNTER_DEBUG_LOGLEVEL >= 1
 void debug_nanbox(sinanbox_t v) {
   SIDEBUG("%"PRIx32 " ", v.as_u32);
   switch (NANBOX_GETTYPE(v)) {

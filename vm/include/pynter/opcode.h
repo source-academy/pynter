@@ -1,5 +1,5 @@
-#ifndef SINTER_OPCODE_H
-#define SINTER_OPCODE_H
+#ifndef PYNTER_OPCODE_H
+#define PYNTER_OPCODE_H
 
 #include "config.h"
 
@@ -96,67 +96,67 @@ typedef enum __attribute__((__packed__)) {
   op_neq_g    = 0x52,
   op_neq_f    = 0x53,
   op_neq_b    = 0x54
-} sinter_opcode_t;
-_Static_assert(sizeof(sinter_opcode_t) == 1, "enum sinter_opcode has wrong size");
+} pynter_opcode_t;
+_Static_assert(sizeof(pynter_opcode_t) == 1, "enum pynter_opcode has wrong size");
 
-#ifdef SINTER_OPSTRUCT
-#error Conflicting SINTER_OPSTRUCT defined.
+#ifdef PYNTER_OPSTRUCT
+#error Conflicting PYNTER_OPSTRUCT defined.
 #endif
-#define SINTER_OPSTRUCT(__ident__, __size__, __body__) \
+#define PYNTER_OPSTRUCT(__ident__, __size__, __body__) \
   struct __attribute__((__packed__)) op_ ## __ident__ { \
     opcode_t opcode; \
     __body__ \
   }; \
   _Static_assert(sizeof(struct op_ ## __ident__) == __size__ + 1, "struct op_" #__ident__ " has wrong size");
 
-SINTER_OPSTRUCT(i32, 4,
+PYNTER_OPSTRUCT(i32, 4,
   int32_t operand;
 )
 
-SINTER_OPSTRUCT(f32, 4,
+PYNTER_OPSTRUCT(f32, 4,
   float operand;
 )
 
-#if DBL_MANT_DIG == 53 && !defined(SINTER_TEST_SHORT_DOUBLE)
-SINTER_OPSTRUCT(f64, 8,
+#if DBL_MANT_DIG == 53 && !defined(PYNTER_TEST_SHORT_DOUBLE)
+PYNTER_OPSTRUCT(f64, 8,
   double operand;
 )
 _Static_assert(sizeof(double) == 8, "double is not 64-bit");
 #else
-#define SINTER_SHORT_DOUBLE_WORKAROUND
-SINTER_OPSTRUCT(f64, 8,
+#define PYNTER_SHORT_DOUBLE_WORKAROUND
+PYNTER_OPSTRUCT(f64, 8,
   uint64_t operand_u64;
 )
 _Static_assert(sizeof(uint64_t) == 8, "uint64_t is not 64-bit");
 _Static_assert(sizeof(float) == 4, "float is not 32-bit");
 #endif
 
-SINTER_OPSTRUCT(address, 4,
+PYNTER_OPSTRUCT(address, 4,
   address_t address;
 )
 
-SINTER_OPSTRUCT(oneindex, 1,
+PYNTER_OPSTRUCT(oneindex, 1,
   uint8_t index;
 )
 
-SINTER_OPSTRUCT(twoindex, 2,
+PYNTER_OPSTRUCT(twoindex, 2,
   uint8_t index;
   uint8_t envindex;
 )
 
-SINTER_OPSTRUCT(offset, 4,
+PYNTER_OPSTRUCT(offset, 4,
   offset_t offset;
 )
 
-SINTER_OPSTRUCT(call, 1,
+PYNTER_OPSTRUCT(call, 1,
   uint8_t num_args;
 )
 
-SINTER_OPSTRUCT(call_internal, 2,
+PYNTER_OPSTRUCT(call_internal, 2,
   uint8_t id;
   uint8_t num_args;
 )
 
-#undef SINTER_OPSTRUCT
+#undef PYNTER_OPSTRUCT
 
-#endif // SINTER_OPCODE_H
+#endif // PYNTER_OPCODE_H

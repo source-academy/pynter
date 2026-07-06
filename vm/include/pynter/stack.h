@@ -1,5 +1,5 @@
-#ifndef SINTER_STACK_H
-#define SINTER_STACK_H
+#ifndef PYNTER_STACK_H
+#define PYNTER_STACK_H
 
 #include "config.h"
 
@@ -14,7 +14,7 @@
 extern "C" {
 #endif
 
-extern sinanbox_t sistack[SINTER_STACK_ENTRIES];
+extern sinanbox_t sistack[PYNTER_STACK_ENTRIES];
 
 // (Inclusive) Bottom of the current function's operand stack, as an index into
 // sistack.
@@ -25,8 +25,8 @@ extern sinanbox_t *sistack_limit;
 // Index of the next empty entry of the current function's operand stack.
 extern sinanbox_t *sistack_top;
 
-SINTER_INLINE void sistack_push_force(sinanbox_t entry) {
-#if SINTER_DEBUG_LOGLEVEL >= 2
+PYNTER_INLINE void sistack_push_force(sinanbox_t entry) {
+#if PYNTER_DEBUG_LOGLEVEL >= 2
   SIDEBUG("Pushed onto stack: ");
   SIDEBUG_NANBOX(entry);
   SIDEBUG("\n");
@@ -35,10 +35,10 @@ SINTER_INLINE void sistack_push_force(sinanbox_t entry) {
   *(sistack_top++) = entry;
 }
 
-SINTER_INLINE void sistack_push(sinanbox_t entry) {
-#ifndef SINTER_DISABLE_CHECKS
+PYNTER_INLINE void sistack_push(sinanbox_t entry) {
+#ifndef PYNTER_DISABLE_CHECKS
   if (sistack_top >= sistack_limit) {
-    sifault(sinter_fault_stack_overflow);
+    sifault(pynter_fault_stack_overflow);
     return;
   }
 #endif
@@ -46,14 +46,14 @@ SINTER_INLINE void sistack_push(sinanbox_t entry) {
   sistack_push_force(entry);
 }
 
-SINTER_INLINE __attribute__((warn_unused_result)) sinanbox_t sistack_pop(void) {
-#ifndef SINTER_DISABLE_CHECKS
+PYNTER_INLINE __attribute__((warn_unused_result)) sinanbox_t sistack_pop(void) {
+#ifndef PYNTER_DISABLE_CHECKS
   if (sistack_top <= sistack_bottom) {
-    sifault(sinter_fault_stack_underflow);
+    sifault(pynter_fault_stack_underflow);
   }
 #endif
 
-#if SINTER_DEBUG_LOGLEVEL >= 2
+#if PYNTER_DEBUG_LOGLEVEL >= 2
   SIDEBUG("Popped from stack: ");
   SIDEBUG_NANBOX(*(sistack_top - 1));
   SIDEBUG("\n");
@@ -61,18 +61,18 @@ SINTER_INLINE __attribute__((warn_unused_result)) sinanbox_t sistack_pop(void) {
   return *(--sistack_top);
 }
 
-SINTER_INLINE sinanbox_t sistack_peek(unsigned int index) {
+PYNTER_INLINE sinanbox_t sistack_peek(unsigned int index) {
   sinanbox_t *v = sistack_top - 1 - index;
-#ifndef SINTER_DISABLE_CHECKS
+#ifndef PYNTER_DISABLE_CHECKS
   if (v < sistack_bottom) {
-    sifault(sinter_fault_stack_underflow);
+    sifault(pynter_fault_stack_underflow);
   }
 #endif
 
   return *v;
 }
 
-SINTER_INLINE void sistack_new(unsigned int size, const opcode_t *return_address, siheap_env_t *return_env) {
+PYNTER_INLINE void sistack_new(unsigned int size, const opcode_t *return_address, siheap_env_t *return_env) {
   siheap_frame_t *frame = siframe_new();
   frame->return_address = return_address;
   frame->saved_env = return_env;
@@ -86,7 +86,7 @@ SINTER_INLINE void sistack_new(unsigned int size, const opcode_t *return_address
   sistack_limit = sistack_bottom + size;
 }
 
-SINTER_INLINE void sistack_destroy(const opcode_t **return_address, siheap_env_t **return_env) {
+PYNTER_INLINE void sistack_destroy(const opcode_t **return_address, siheap_env_t **return_env) {
   while (sistack_top > sistack_bottom) {
     sinanbox_t v = sistack_pop();
     siheap_derefbox(v);

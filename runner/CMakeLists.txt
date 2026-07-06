@@ -21,4 +21,4 @@ target_compile_options(runner
   PRIVATE $<$<CONFIG:Release>:-O2>
 )
 
-target_link_libraries(runner sinter)
+target_link_libraries(runner pynter)

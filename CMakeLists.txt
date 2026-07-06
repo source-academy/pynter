@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(sinter C)
+project(pynter C)
 
 enable_testing()
 

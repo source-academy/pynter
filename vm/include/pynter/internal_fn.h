@@ -1,5 +1,5 @@
-#ifndef SINTER_INTERNAL_FN_H
-#define SINTER_INTERNAL_FN_H
+#ifndef PYNTER_INTERNAL_FN_H
+#define PYNTER_INTERNAL_FN_H
 
 #include "config.h"
 

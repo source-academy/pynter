@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 
-set(SINTER_DEBUG_LOGLEVEL 0 CACHE STRING "Debug level")
-set(SINTER_STATIC_HEAP 1 CACHE STRING "Enable static heap")
-set(SINTER_TEST_SHORT_DOUBLE 0 CACHE STRING "Test short double workaround")
+set(PYNTER_DEBUG_LOGLEVEL 0 CACHE STRING "Debug level")
+set(PYNTER_STATIC_HEAP 1 CACHE STRING "Enable static heap")
+set(PYNTER_TEST_SHORT_DOUBLE 0 CACHE STRING "Test short double workaround")
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "Defaulting to Debug build.")
@@ -11,9 +11,9 @@ endif()
 
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
-project(libsinter C)
+project(libpynter C)
 
-add_library(sinter
+add_library(pynter
   src/vm.c
   src/fault.c
   src/memory.c
@@ -24,36 +24,36 @@ add_library(sinter
   src/primitives.c
 )
 
-target_compile_options(sinter
+target_compile_options(pynter
   PRIVATE -Wall -Wextra -Wswitch-enum -std=c11 -pedantic -Werror -fwrapv -g
-  PRIVATE $<$<CONFIG:Debug>:$<IF:$<BOOL:${SINTER_NUMERIC_OPT}>,-O0,-Og>>
+  PRIVATE $<$<CONFIG:Debug>:$<IF:$<BOOL:${PYNTER_NUMERIC_OPT}>,-O0,-Og>>
   PRIVATE $<$<CONFIG:Release>:-O2 -DNDEBUG>
-  PUBLIC $<$<OR:$<CONFIG:Debug>,$<BOOL:${SINTER_DEBUG}>>:-DSINTER_DEBUG>
-  PUBLIC $<$<BOOL:${SINTER_STATIC_HEAP}>:-DSINTER_STATIC_HEAP>
-  PUBLIC -DSINTER_DEBUG_LOGLEVEL=${SINTER_DEBUG_LOGLEVEL}
-  PUBLIC $<$<BOOL:${SINTER_DEBUG_ABORT_ON_FAULT}>:-DSINTER_DEBUG_ABORT_ON_FAULT>
-  PUBLIC $<$<BOOL:${SINTER_DEBUG_MEMORY_CHECK}>:-DSINTER_DEBUG_MEMORY_CHECK>
-  PUBLIC $<$<BOOL:${SINTER_DISABLE_CHECKS}>:-DSINTER_DISABLE_CHECKS>
-  PUBLIC $<$<BOOL:${SINTER_TEST_SHORT_DOUBLE}>:-DSINTER_TEST_SHORT_DOUBLE>
-  PUBLIC $<$<BOOL:${SINTER_COVERAGE}>:--coverage -fno-inline -fno-inline-small-functions -fno-default-inline>
+  PUBLIC $<$<OR:$<CONFIG:Debug>,$<BOOL:${PYNTER_DEBUG}>>:-DPYNTER_DEBUG>
+  PUBLIC $<$<BOOL:${PYNTER_STATIC_HEAP}>:-DPYNTER_STATIC_HEAP>
+  PUBLIC -DPYNTER_DEBUG_LOGLEVEL=${PYNTER_DEBUG_LOGLEVEL}
+  PUBLIC $<$<BOOL:${PYNTER_DEBUG_ABORT_ON_FAULT}>:-DPYNTER_DEBUG_ABORT_ON_FAULT>
+  PUBLIC $<$<BOOL:${PYNTER_DEBUG_MEMORY_CHECK}>:-DPYNTER_DEBUG_MEMORY_CHECK>
+  PUBLIC $<$<BOOL:${PYNTER_DISABLE_CHECKS}>:-DPYNTER_DISABLE_CHECKS>
+  PUBLIC $<$<BOOL:${PYNTER_TEST_SHORT_DOUBLE}>:-DPYNTER_TEST_SHORT_DOUBLE>
+  PUBLIC $<$<BOOL:${PYNTER_COVERAGE}>:--coverage -fno-inline -fno-inline-small-functions -fno-default-inline>
 )
 
-if(DEFINED SINTER_HEAP_SIZE)
-  target_compile_options(sinter PUBLIC -DSINTER_HEAP_SIZE=${SINTER_HEAP_SIZE})
-  message(STATUS "Setting SINTER_HEAP_SIZE to ${SINTER_HEAP_SIZE}")
+if(DEFINED PYNTER_HEAP_SIZE)
+  target_compile_options(pynter PUBLIC -DPYNTER_HEAP_SIZE=${PYNTER_HEAP_SIZE})
+  message(STATUS "Setting PYNTER_HEAP_SIZE to ${PYNTER_HEAP_SIZE}")
 endif()
 
-if(DEFINED SINTER_STACK_ENTRIES)
-  target_compile_options(sinter PUBLIC -DSINTER_STACK_ENTRIES=${SINTER_STACK_ENTRIES})
-  message(STATUS "Setting SINTER_STACK_ENTRIES to ${SINTER_STACK_ENTRIES}")
+if(DEFINED PYNTER_STACK_ENTRIES)
+  target_compile_options(pynter PUBLIC -DPYNTER_STACK_ENTRIES=${PYNTER_STACK_ENTRIES})
+  message(STATUS "Setting PYNTER_STACK_ENTRIES to ${PYNTER_STACK_ENTRIES}")
 endif()
 
-target_link_options(sinter
-  PUBLIC $<$<BOOL:${SINTER_COVERAGE}>:--coverage>
+target_link_options(pynter
+  PUBLIC $<$<BOOL:${PYNTER_COVERAGE}>:--coverage>
 )
 
-target_include_directories(sinter
+target_include_directories(pynter
   PUBLIC include
 )
 
-target_link_libraries(sinter m)
+target_link_libraries(pynter m)

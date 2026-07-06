@@ -1,5 +1,5 @@
-#ifndef SINTER_PROGRAM_H
-#define SINTER_PROGRAM_H
+#ifndef PYNTER_PROGRAM_H
+#define PYNTER_PROGRAM_H
 
 #include "config.h"
 
@@ -7,10 +7,10 @@
 
 #include "opcode.h"
 
-#define SVM_MAGIC 0x5005ACADu
+#define PVM_MAGIC 0x5005ACADu
 
 /**
- * The header of an SVM program.
+ * The header of a PVM program.
  */
 typedef struct __attribute__((__packed__)) {
   /**
@@ -26,18 +26,18 @@ typedef struct __attribute__((__packed__)) {
    */
   uint16_t v_minor;
   /**
-   * The address to the entry point [svm_function](@ref svm_function).
+   * The address to the entry point [pvm_function](@ref pvm_function).
    */
   address_t entry;
   /**
    * The number of constants following the header.
    */
   uint32_t constant_count;
-} svm_header_t;
-_Static_assert(sizeof(svm_header_t) == 16, "Wrong svm_header_t size");
+} pvm_header_t;
+_Static_assert(sizeof(pvm_header_t) == 16, "Wrong pvm_header_t size");
 
 /**
- * A constant in the constant pool of an SVM program.
+ * A constant in the constant pool of a PVM program.
  */
 typedef struct __attribute__((__packed__)) {
   uint16_t type;
@@ -45,11 +45,11 @@ typedef struct __attribute__((__packed__)) {
 #ifndef __cplusplus
   unsigned char data[];
 #endif
-} svm_constant_t;
-_Static_assert(sizeof(svm_constant_t) == 6, "Wrong svm_constant_t size");
+} pvm_constant_t;
+_Static_assert(sizeof(pvm_constant_t) == 6, "Wrong pvm_constant_t size");
 
 /**
- * A function in an SVM program. All code in an SVM program is in a function.
+ * A function in a PVM program. All code in a PVM program is in a function.
  */
 typedef struct __attribute__((__packed__)) {
   /**
@@ -69,7 +69,7 @@ typedef struct __attribute__((__packed__)) {
    * The first instruction.
    */
   opcode_t code;
-} svm_function_t;
-_Static_assert(sizeof(svm_function_t) == 5, "Wrong svm_function_t size");
+} pvm_function_t;
+_Static_assert(sizeof(pvm_function_t) == 5, "Wrong pvm_function_t size");
 
 #endif

@@ -1,36 +1,36 @@
-#include <sinter/config.h>
+#include <pynter/config.h>
 
 #include <math.h>
 #include <inttypes.h>
 #include <stdbool.h>
 #include <string.h>
 
-#include <sinter.h>
+#include <pynter.h>
 
-#include <sinter/opcode.h>
-#include <sinter/fault.h>
-#include <sinter/nanbox.h>
-#include <sinter/heap.h>
-#include <sinter/heap_obj.h>
-#include <sinter/vm.h>
-#include <sinter/stack.h>
-#include <sinter/debug.h>
-#include <sinter/program.h>
+#include <pynter/opcode.h>
+#include <pynter/fault.h>
+#include <pynter/nanbox.h>
+#include <pynter/heap.h>
+#include <pynter/heap_obj.h>
+#include <pynter/vm.h>
+#include <pynter/stack.h>
+#include <pynter/debug.h>
+#include <pynter/program.h>
 
 struct sistate sistate;
 
 const sivmfnptr_t *sivmfn_vminternals = NULL;
 size_t sivmfn_vminternal_count = 0;
 
-sinter_printfn_string sinter_printer_string = NULL;
-sinter_printfn_integer sinter_printer_integer = NULL;
-sinter_printfn_float sinter_printer_float = NULL;
-sinter_printfn_flush sinter_printer_flush = NULL;
+pynter_printfn_string pynter_printer_string = NULL;
+pynter_printfn_integer pynter_printer_integer = NULL;
+pynter_printfn_float pynter_printer_float = NULL;
+pynter_printfn_flush pynter_printer_flush = NULL;
 
 #if 0
 static inline void unimpl_instr() {
   SIBUGV("Unimplemented instruction %02x at address 0x%tx\n", *sistate.pc, SISTATE_CURADDR);
-  sifault(sinter_fault_invalid_program);
+  sifault(pynter_fault_invalid_program);
 }
 #endif
 
@@ -50,7 +50,7 @@ bool sivm_equal(sinanbox_t l, sinanbox_t r) {
         return NANBOX_FLOAT(l) == NANBOX_FLOAT(r);
       default:
         SIBUG();
-        sifault(sinter_fault_internal_error);
+        sifault(pynter_fault_internal_error);
         return false;
     }
   } else if (NANBOX_ISPTR(l) & NANBOX_ISPTR(r)) {
@@ -74,14 +74,14 @@ static inline void pop_array_args(siheap_array_t **array, address_t *index) {
   *array = SIHEAP_NANBOXTOPTR(arrayv);
 
   if (!NANBOX_ISPTR(arrayv) || (*array)->header.type != sitype_array) {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
     return;
   }
 
   if (NANBOX_ISINT(indexv)) {
     int32_t t = NANBOX_INT(indexv);
     if (t < 0) {
-      sifault(sinter_fault_invalid_load);
+      sifault(pynter_fault_invalid_load);
       return;
     }
     *index = (address_t) t;
@@ -89,7 +89,7 @@ static inline void pop_array_args(siheap_array_t **array, address_t *index) {
     // TODO check if float is integral
     float t = (address_t) NANBOX_FLOAT(indexv);
     if (t < 0) {
-      sifault(sinter_fault_invalid_load);
+      sifault(pynter_fault_invalid_load);
       return;
     }
     *index = (address_t) t;
@@ -105,7 +105,7 @@ static inline bool do_internal_function(
   const bool pop_fn) {
   if ((is_primitive && id >= SIVMFN_PRIMITIVE_COUNT) || (!is_primitive && id >= sivmfn_vminternal_count)) {
     SIDEBUG("Invalid %s function index %d\n", is_primitive ? "primitive" : "VM-internal", id);
-    sifault(sinter_fault_invalid_program);
+    sifault(pynter_fault_invalid_program);
     return false;
   }
 
@@ -154,24 +154,24 @@ static inline bool do_internal_function(
  * Runs the main interpreter loop.
  */
 static void main_loop(void) {
-#ifdef SINTER_DEBUG
+#ifdef PYNTER_DEBUG
   const opcode_t *previous_pc = NULL;
   (void) previous_pc;
 #endif
   while (1) {
     if (!sistate.running) {
       SIDEBUG("The program has been stopped by the user.\n");
-      sifault(sinter_fault_stopped);
+      sifault(pynter_fault_stopped);
       return;
     }
 
-#ifdef SINTER_DEBUG_MEMORY_CHECK
+#ifdef PYNTER_DEBUG_MEMORY_CHECK
     debug_memorycheck();
 #endif
-#ifdef SINTER_DEBUG
+#ifdef PYNTER_DEBUG
     if (sistate.pc >= sistate.program_end) {
       SIBUGV("Jumped out of bounds to 0x%tx after instruction at address 0x%tx\n", SISTATE_CURADDR, previous_pc - sistate.program);
-      sifault(sinter_fault_internal_error);
+      sifault(pynter_fault_internal_error);
       return;
     }
     previous_pc = sistate.pc;
@@ -197,7 +197,7 @@ static void main_loop(void) {
     case op_ldc_f64:
     case op_lgc_f64: {
       DECLOPSTRUCT(op_f64);
-#ifdef SINTER_SHORT_DOUBLE_WORKAROUND
+#ifdef PYNTER_SHORT_DOUBLE_WORKAROUND
       // for systems (e.g. Arduino AVR) where double is actually an alias of float...
       // manually convert the double into a float
       union {
@@ -258,7 +258,7 @@ static void main_loop(void) {
       ADVANCE_PCONE();
     case op_lgc_s: {
       DECLOPSTRUCT(op_address);
-      const svm_constant_t *string = (const svm_constant_t *) (sistate.program + instr->address);
+      const pvm_constant_t *string = (const pvm_constant_t *) (sistate.program + instr->address);
       siheap_strconst_t *obj = sistrconst_new(string);
       sistack_push(SIHEAP_PTRTONANBOX(obj));
       ADVANCE_PCI();
@@ -270,7 +270,7 @@ static void main_loop(void) {
       ADVANCE_PCONE();
 
 #define ARITHMETIC_TYPECHECK() do { if (!NANBOX_ISNUMERIC(v0) || !NANBOX_ISNUMERIC(v1)) {\
-  sifault(sinter_fault_type); \
+  sifault(pynter_fault_type); \
   return; \
 } } while (0)
 
@@ -298,7 +298,7 @@ static void main_loop(void) {
           break;
         default:
           SIBUG();
-          sifault(sinter_fault_internal_error);
+          sifault(pynter_fault_internal_error);
           break;
         }
       } else if (NANBOX_ISPTR(v0) & NANBOX_ISPTR(v1)) {
@@ -319,12 +319,12 @@ static void main_loop(void) {
           }
         } else {
           SIDEBUG("Invalid operands to add.\n");
-          sifault(sinter_fault_type);
+          sifault(pynter_fault_type);
           return;
         }
       } else {
         SIDEBUG("Invalid operands to add.\n");
-        sifault(sinter_fault_type);
+        sifault(pynter_fault_type);
         return;
       }
 
@@ -356,7 +356,7 @@ static void main_loop(void) {
         break;
       default:
         SIBUG();
-        sifault(sinter_fault_internal_error);
+        sifault(pynter_fault_internal_error);
         return;
       }
       sistack_push(r);
@@ -387,7 +387,7 @@ static void main_loop(void) {
         break;
       default:
         SIBUG();
-        sifault(sinter_fault_internal_error);
+        sifault(pynter_fault_internal_error);
         return;
       }
       sistack_push(r);
@@ -417,7 +417,7 @@ static void main_loop(void) {
         break;
       default:
         SIBUG();
-        sifault(sinter_fault_internal_error);
+        sifault(pynter_fault_internal_error);
         return;
       }
       sistack_push(r);
@@ -447,7 +447,7 @@ static void main_loop(void) {
         break;
       default:
         SIBUG();
-        sifault(sinter_fault_internal_error);
+        sifault(pynter_fault_internal_error);
         break;
       }
       sistack_push(r);
@@ -465,7 +465,7 @@ static void main_loop(void) {
       } else if (NANBOX_ISFLOAT(v1)) {
         sistack_push(NANBOX_OFFLOAT(-NANBOX_FLOAT(v1)));
       } else {
-        sifault(sinter_fault_type);
+        sifault(pynter_fault_type);
         return;
       }
 
@@ -476,7 +476,7 @@ static void main_loop(void) {
     case op_not_b: {
       sinanbox_t v = sistack_pop();
       if (!NANBOX_ISBOOL(v)) {
-        sifault(sinter_fault_type);
+        sifault(pynter_fault_type);
         return;
       }
       sistack_push(NANBOX_OFBOOL(!NANBOX_BOOL(v)));
@@ -504,7 +504,7 @@ static void main_loop(void) {
           break; \
         default: \
           SIBUG(); \
-          sifault(sinter_fault_internal_error); \
+          sifault(pynter_fault_internal_error); \
           break; \
         } \
       } else if (NANBOX_ISPTR(v0) & NANBOX_ISPTR(v1)) { \
@@ -514,12 +514,12 @@ static void main_loop(void) {
           r = NANBOX_OFBOOL(strcmp(sistrobj_tocharptr(hv0), sistrobj_tocharptr(hv1)) op 0); \
         } else { \
           SIDEBUG("Invalid operands to comparison.\n"); \
-          sifault(sinter_fault_type); \
+          sifault(pynter_fault_type); \
           return; \
         } \
       } else { \
         SIDEBUG("Invalid operands to comparison.\n"); \
-        sifault(sinter_fault_type); \
+        sifault(pynter_fault_type); \
         return; \
       } \
  \
@@ -563,7 +563,7 @@ static void main_loop(void) {
 
     case op_new_c: {
       DECLOPSTRUCT(op_address);
-      const svm_function_t *fn_code = (const svm_function_t *) SISTATE_ADDRTOPC(instr->address);
+      const pvm_function_t *fn_code = (const pvm_function_t *) SISTATE_ADDRTOPC(instr->address);
       siheap_function_t *fn_obj = sifunction_new(fn_code, sistate.env);
       sistack_push(SIHEAP_PTRTONANBOX(fn_obj));
       ADVANCE_PCI();
@@ -593,7 +593,7 @@ static void main_loop(void) {
       DECLOPSTRUCT(op_oneindex);
       sinanbox_t v = sienv_get(sistate.env, instr->index);
       if (NANBOX_ISEMPTY(v)) {
-        sifault(sinter_fault_uninitialised_load);
+        sifault(pynter_fault_uninitialised_load);
         return;
       }
       siheap_refbox(v);
@@ -616,12 +616,12 @@ static void main_loop(void) {
       DECLOPSTRUCT(op_twoindex);
       siheap_env_t *env = sienv_getparent(sistate.env, instr->envindex);
       if (!env) {
-        sifault(sinter_fault_invalid_load);
+        sifault(pynter_fault_invalid_load);
         return;
       }
       sinanbox_t v = sienv_get(env, instr->index);
       if (NANBOX_ISEMPTY(v)) {
-        sifault(sinter_fault_uninitialised_load);
+        sifault(pynter_fault_uninitialised_load);
         return;
       }
       siheap_refbox(v);
@@ -635,7 +635,7 @@ static void main_loop(void) {
       DECLOPSTRUCT(op_twoindex);
       siheap_env_t *env = sienv_getparent(sistate.env, instr->envindex);
       if (!env) {
-        sifault(sinter_fault_invalid_load);
+        sifault(pynter_fault_invalid_load);
         return;
       }
       sinanbox_t v = sistack_pop();
@@ -678,7 +678,7 @@ static void main_loop(void) {
       DECLOPSTRUCT(op_offset);
       sinanbox_t v = sistack_pop();
       if (!NANBOX_ISBOOL(v)) {
-        sifault(sinter_fault_type);
+        sifault(pynter_fault_type);
         return;
       }
       if (NANBOX_BOOL(v) == (this_opcode == op_br_t)) {
@@ -704,7 +704,7 @@ static void main_loop(void) {
     case op_call:
     case op_call_t: {
       // There are three types of functions:
-      // - regular SVM closures (those created by new.c)
+      // - regular PVM closures (those created by new.c)
       // - internal functions (represented in a NaNbox)
       // - internal continuations (used for streams)
       // each of them have slightly different ways to call them, so you end up
@@ -725,15 +725,15 @@ static void main_loop(void) {
           siheap_function_t *fn_obj = (siheap_function_t *) obj;
 
           // get the code
-          const svm_function_t *fn_code = fn_obj->code;
+          const pvm_function_t *fn_code = fn_obj->code;
 
           if (instr->num_args != fn_code->num_args) {
-            sifault(sinter_fault_function_arity);
+            sifault(pynter_fault_function_arity);
             return;
           }
 
           if (fn_code->num_args > fn_code->env_size) {
-            sifault(sinter_fault_invalid_load);
+            sifault(pynter_fault_invalid_load);
             return;
           }
 
@@ -743,7 +743,7 @@ static void main_loop(void) {
           // check we have enough arguments on the stack
           sistack_top -= fn_code->num_args;
           if (sistack_top < sistack_bottom) {
-            sifault(sinter_fault_stack_underflow);
+            sifault(pynter_fault_stack_underflow);
             return;
           }
 
@@ -776,7 +776,7 @@ static void main_loop(void) {
 
           // continuations are zero-arity
           if (instr->num_args) {
-            sifault(sinter_fault_function_arity);
+            sifault(pynter_fault_function_arity);
             return;
           }
 
@@ -803,7 +803,7 @@ static void main_loop(void) {
             return;
           }
         } else {
-          sifault(sinter_fault_type);
+          sifault(pynter_fault_type);
           return;
         }
       }
@@ -891,7 +891,7 @@ static void main_loop(void) {
 
     default:
       SIBUGV("Invalid instruction %02x at address 0x%tx\n", this_opcode, SISTATE_CURADDR);
-      sifault(sinter_fault_invalid_program);
+      sifault(pynter_fault_invalid_program);
       break;
     }
 
@@ -899,17 +899,17 @@ static void main_loop(void) {
 }
 
 /**
- * Executes an SVM function.
+ * Executes a PVM function.
  *
  * This is used by the main entrypoint in main.c, as well as by primitive
  * functions that need to execute functions given to it (e.g. map).
  */
-sinanbox_t siexec(const svm_function_t *fn, siheap_env_t *parent_env, uint8_t argc, sinanbox_t *argv) {
+sinanbox_t siexec(const pvm_function_t *fn, siheap_env_t *parent_env, uint8_t argc, sinanbox_t *argv) {
   siheap_env_t *old_env = sistate.env;
   const opcode_t *old_pc = sistate.pc;
 
   if (fn->env_size < argc) {
-    sifault(sinter_fault_invalid_load);
+    sifault(pynter_fault_invalid_load);
     return NANBOX_OFEMPTY();
   }
 
@@ -933,7 +933,7 @@ sinanbox_t siexec(const svm_function_t *fn, siheap_env_t *parent_env, uint8_t ar
 
 void sistop(void) {
   sistate.running = false;
-  sistate.fault_reason = sinter_fault_stopped;
+  sistate.fault_reason = pynter_fault_stopped;
   sistate.pc = NULL;
   sistate.program = NULL;
   sistate.program_end = NULL;

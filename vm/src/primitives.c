@@ -1,4 +1,4 @@
-#include <sinter/config.h>
+#include <pynter/config.h>
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -6,14 +6,14 @@
 #include <limits.h>
 #include <math.h>
 
-#include <sinter/nanbox.h>
-#include <sinter/fault.h>
-#include <sinter/heap.h>
-#include <sinter/stack.h>
-#include <sinter/debug.h>
-#include <sinter/internal_fn.h>
-#include <sinter/vm.h>
-#include <sinter/display.h>
+#include <pynter/nanbox.h>
+#include <pynter/fault.h>
+#include <pynter/heap.h>
+#include <pynter/stack.h>
+#include <pynter/debug.h>
+#include <pynter/internal_fn.h>
+#include <pynter/vm.h>
+#include <pynter/display.h>
 
 /**
  * This file contains the implementations (in C) of all 92 functions in the Source
@@ -41,14 +41,14 @@ static void handle_display(unsigned int argc, sinanbox_t *argv, bool is_error) {
 
   sidisplay_nanbox(argv[0], is_error);
 
-  if (sinter_printer_flush) {
-    sinter_printer_flush(is_error);
+  if (pynter_printer_flush) {
+    pynter_printer_flush(is_error);
   }
 }
 
 #define CHECK_ARGC(n) do { \
   if (argc < (n)) { \
-    sifault(sinter_fault_function_arity); \
+    sifault(pynter_fault_function_arity); \
     return NANBOX_OFEMPTY(); \
   } \
 } while (0)
@@ -182,7 +182,7 @@ static sinanbox_t sivmfn_prim_math_abs(uint8_t argc, sinanbox_t *argv) {
     return NANBOX_OFFLOAT(fabsf(NANBOX_FLOAT(v)));
   }
 
-  sifault(sinter_fault_type);
+  sifault(pynter_fault_type);
   return NANBOX_OFEMPTY();
 }
 
@@ -207,7 +207,7 @@ static sinanbox_t sivmfn_prim_math_clz32(uint8_t argc, sinanbox_t *argv) {
 
 static sinanbox_t sivmfn_prim_math_fround(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  // no-op: sinter uses floats not doubles
+  // no-op: pynter uses floats not doubles
   return *argv;
 }
 
@@ -230,7 +230,7 @@ static sinanbox_t sivmfn_prim_math_max(uint8_t argc, sinanbox_t *argv) {
     return max;
   }
   if (!NANBOX_ISFLOAT(max) && !NANBOX_ISINT(max)) {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
     return max;
   }
   for (unsigned int i = 1; i < argc; ++i) {
@@ -251,7 +251,7 @@ static sinanbox_t sivmfn_prim_math_max(uint8_t argc, sinanbox_t *argv) {
         max = contender;
       }
     } else {
-      sifault(sinter_fault_type);
+      sifault(pynter_fault_type);
     }
   }
 
@@ -268,7 +268,7 @@ static sinanbox_t sivmfn_prim_math_min(uint8_t argc, sinanbox_t *argv) {
     return min;
   }
   if (!NANBOX_ISFLOAT(min) && !NANBOX_ISINT(min)) {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
     return min;
   }
   for (unsigned int i = 1; i < argc; ++i) {
@@ -289,7 +289,7 @@ static sinanbox_t sivmfn_prim_math_min(uint8_t argc, sinanbox_t *argv) {
         min = contender;
       }
     } else {
-      sifault(sinter_fault_type);
+      sifault(pynter_fault_type);
     }
   }
 
@@ -310,7 +310,7 @@ static sinanbox_t sivmfn_prim_math_sign(uint8_t argc, sinanbox_t *argv) {
     float fv = NANBOX_FLOAT(v);
     return NANBOX_OFINT(fv != 0.0f ? (fv > 0.0f ? 1 : -1) : 0);
   } else {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
   }
   return NANBOX_OFEMPTY();
 }
@@ -327,7 +327,7 @@ static sinanbox_t sivmfn_prim_math_sign(uint8_t argc, sinanbox_t *argv) {
     } \
     return NANBOX_OFFLOAT(retv); \
   } else { \
-    sifault(sinter_fault_type); \
+    sifault(pynter_fault_type); \
   } \
   return NANBOX_OFEMPTY(); \
 }
@@ -356,7 +356,7 @@ static inline siheap_array_t *nanbox_toarray(sinanbox_t p) {
   siheap_header_t *v = SIHEAP_NANBOXTOPTR(p);
   siheap_array_t *a = (siheap_array_t *) v;
   if (!NANBOX_ISPTR(p) || v->type != sitype_array) {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
     return NULL;
   }
   return a;
@@ -450,7 +450,7 @@ static sinanbox_t sivmfn_prim_accumulate(uint8_t argc, sinanbox_t *argv) {
 
   // this function is particularly horrible for us
   // we don't want to have a naive recursive implementation (in case we blow the C stack
-  // the Sinter stack isn't particularly large either
+  // the Pynter stack isn't particularly large either
   // so.. here's a compromise: we allocate an array and flatten the list into it
   // then we accumulate using the array
 
@@ -591,7 +591,7 @@ static sinanbox_t sivmfn_prim_enum_list(uint8_t argc, sinanbox_t *argv) {
   } else if (NANBOX_ISFLOAT(argv[0])) {
     return enum_list_float(NANBOX_FLOAT(argv[0]), NANBOX_TOFLOAT(argv[1]));
   }
-  sifault(sinter_fault_type);
+  sifault(pynter_fault_type);
   return NANBOX_OFEMPTY();
 }
 
@@ -617,7 +617,7 @@ static sinanbox_t sivmfn_prim_filter(uint8_t argc, sinanbox_t *argv) {
         continue;
       }
     } else {
-      sifault(sinter_fault_type);
+      sifault(pynter_fault_type);
     }
     siheap_refbox(cur);
     siheap_array_t *new_pair = source_pair_ptr(cur, NANBOX_OFNULL());
@@ -865,7 +865,7 @@ static sinanbox_t sivmfn_prim_array_length(uint8_t argc, sinanbox_t *argv) {
   sinanbox_t v = *argv;
   siheap_header_t *obj = SIHEAP_NANBOXTOPTR(v);
   if (!NANBOX_ISPTR(v) || obj->type != sitype_array) {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
     return NANBOX_OFEMPTY();
   }
 
@@ -1138,7 +1138,7 @@ static sinanbox_t sivmfn_prim_stream_filter(uint8_t argc, sinanbox_t *argv) {
     siheap_intderef(stream_pair);
 
     if (!NANBOX_ISBOOL(fn_res)) {
-      sifault(sinter_fault_type);
+      sifault(pynter_fault_type);
       return NANBOX_OFEMPTY();
     }
 
@@ -1443,7 +1443,7 @@ static sinanbox_t sivmfn_prim_stream_reverse(uint8_t argc, sinanbox_t *argv) {
 
   if (index - 1 > NANBOX_INTMAX) {
     // i guess streams of 0x100000 are big enough, right?
-    sifault(sinter_fault_internal_error);
+    sifault(pynter_fault_internal_error);
     return NANBOX_OFEMPTY();
   }
 
@@ -1580,14 +1580,14 @@ static sinanbox_t sivmfn_prim_error(uint8_t argc, sinanbox_t *argv) {
   SIDEBUG("Program called error with %d arguments:\n", argc);
   debug_display_argv(argc, argv);
   handle_display(argc, argv, true);
-  sifault(sinter_fault_program_error);
+  sifault(pynter_fault_program_error);
   return NANBOX_OFEMPTY();
 }
 
 static sinanbox_t sivmfn_prim_unimpl(uint8_t argc, sinanbox_t *argv) {
   (void) argc; (void) argv;
   SIBUGV("Unimplemented primitive function %02x at address 0x%tx\n", *(sistate.pc + 1), SISTATE_CURADDR);
-  sifault(sinter_fault_invalid_program);
+  sifault(pynter_fault_invalid_program);
   return NANBOX_OFEMPTY();
 }
 

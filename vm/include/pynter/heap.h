@@ -1,5 +1,5 @@
-#ifndef SINTER_HEAP_H
-#define SINTER_HEAP_H
+#ifndef PYNTER_HEAP_H
+#define PYNTER_HEAP_H
 
 #include "config.h"
 
@@ -32,26 +32,26 @@ typedef enum __attribute__((__packed__)) {
 } siheap_type_t;
 _Static_assert(sizeof(siheap_type_t) == 1, "siheap_type_t wider than needed");
 
-#ifdef SINTER_STATIC_HEAP
-extern unsigned char siheap[SINTER_HEAP_SIZE];
+#ifdef PYNTER_STATIC_HEAP
+extern unsigned char siheap[PYNTER_HEAP_SIZE];
 #else
 extern unsigned char *siheap;
 extern size_t siheap_size;
 #endif
 
-#ifdef SINTER_DEBUG
+#ifdef PYNTER_DEBUG
 extern bool siheap_sweeping;
 #endif
 
 typedef address_t heapaddress_t;
-#define SINTER_HEAPREF(addr) (siheap + addr)
-#ifdef SINTER_DEBUG_MEMORY_CHECK
-SINTER_INLINE bool siheap_inrange(const unsigned char *const ent) {
-  return ent >= siheap && ent < siheap + SINTER_HEAP_SIZE;
+#define PYNTER_HEAPREF(addr) (siheap + addr)
+#ifdef PYNTER_DEBUG_MEMORY_CHECK
+PYNTER_INLINE bool siheap_inrange(const unsigned char *const ent) {
+  return ent >= siheap && ent < siheap + PYNTER_HEAP_SIZE;
 }
 #define SIHEAP_INRANGE(ent) (siheap_inrange((const unsigned char *) (ent)))
 #else
-#define SIHEAP_INRANGE(ent) (((unsigned char *) (ent)) < siheap + SINTER_HEAP_SIZE)
+#define SIHEAP_INRANGE(ent) (((unsigned char *) (ent)) < siheap + PYNTER_HEAP_SIZE)
 #endif
 #define SIHEAP_PTRTONANBOX(ptr) NANBOX_OFPTR((uint32_t) (((unsigned char *) (ptr)) - siheap))
 #define SIHEAP_NANBOXTOPTR(val) ((void *) (siheap + NANBOX_PTR(val)))
@@ -66,7 +66,7 @@ typedef struct siheap_header {
    */
   address_t size;
   uint16_t refcount;
-#ifdef SINTER_DEBUG_MEMORY_CHECK
+#ifdef PYNTER_DEBUG_MEMORY_CHECK
   uint16_t debug_refcount;
   uint16_t internal_refcount;
 #endif
@@ -84,31 +84,31 @@ typedef struct siheap_free {
 
 extern siheap_free_t *siheap_first_free;
 
-SINTER_INLINE void siheap_ref(void *vent) {
+PYNTER_INLINE void siheap_ref(void *vent) {
   assert(vent);
   siheap_header_t *ent = (siheap_header_t *) vent;
   assert(ent->type != sitype_free);
   ent->refcount += 1;
 }
 
-SINTER_INLINE void siheap_refbox(sinanbox_t ent) {
+PYNTER_INLINE void siheap_refbox(sinanbox_t ent) {
   if (NANBOX_ISPTR(ent)) {
     siheap_ref(SIHEAP_NANBOXTOPTR(ent));
   }
 }
 
-SINTER_INLINE siheap_header_t *siheap_next(siheap_header_t *const ent) {
+PYNTER_INLINE siheap_header_t *siheap_next(siheap_header_t *const ent) {
   return (siheap_header_t *) (((unsigned char *) ent) + ent->size);
 }
 
-SINTER_INLINE void siheap_fix_next(siheap_header_t *const ent) {
+PYNTER_INLINE void siheap_fix_next(siheap_header_t *const ent) {
   siheap_header_t *const next = siheap_next(ent);
   if (SIHEAP_INRANGE(next)) {
     next->prev_node = ent;
   }
 }
 
-SINTER_INLINE void siheap_free_remove(siheap_free_t *cur) {
+PYNTER_INLINE void siheap_free_remove(siheap_free_t *cur) {
   if (cur->prev_free) {
     assert(cur->prev_free != cur->next_free);
     assert(cur->prev_free->prev_free != cur->next_free || cur->next_free == NULL);
@@ -126,7 +126,7 @@ SINTER_INLINE void siheap_free_remove(siheap_free_t *cur) {
   }
 }
 
-SINTER_INLINE void siheap_free_fix_neighbours(siheap_free_t *cur) {
+PYNTER_INLINE void siheap_free_fix_neighbours(siheap_free_t *cur) {
   if (cur->prev_free) {
     assert(cur->prev_free != cur);
     assert(cur->prev_free->prev_free != cur);
@@ -148,16 +148,16 @@ SINTER_INLINE void siheap_free_fix_neighbours(siheap_free_t *cur) {
   }
 }
 
-SINTER_INLINEIFC void siheap_init(void);
+PYNTER_INLINEIFC void siheap_init(void);
 #ifndef __cplusplus
-SINTER_INLINEIFC void siheap_init(void) {
+PYNTER_INLINEIFC void siheap_init(void) {
   siheap_first_free = (siheap_free_t *) siheap;
   *siheap_first_free = (siheap_free_t) {
     .header = {
       .type = sitype_free,
       .refcount = 0,
       .prev_node = NULL,
-      .size = SINTER_HEAP_SIZE
+      .size = PYNTER_HEAP_SIZE
     },
     .prev_free = NULL,
     .next_free = NULL
@@ -167,7 +167,7 @@ SINTER_INLINEIFC void siheap_init(void) {
 
 void siheap_mark_sweep(void);
 
-SINTER_INLINE siheap_free_t *siheap_malloc_find(address_t size) {
+PYNTER_INLINE siheap_free_t *siheap_malloc_find(address_t size) {
   bool sweeped = false;
   while (1) {
     siheap_free_t *cur = siheap_first_free;
@@ -180,7 +180,7 @@ SINTER_INLINE siheap_free_t *siheap_malloc_find(address_t size) {
 
     if (!cur) {
       if (sweeped) {
-        sifault(sinter_fault_out_of_memory);
+        sifault(pynter_fault_out_of_memory);
         return NULL;
       } else {
         sweeped = true;
@@ -193,9 +193,9 @@ SINTER_INLINE siheap_free_t *siheap_malloc_find(address_t size) {
   }
 }
 
-SINTER_INLINEIFC siheap_header_t *siheap_malloc_split(siheap_free_t *cur, address_t size, siheap_type_t type);
+PYNTER_INLINEIFC siheap_header_t *siheap_malloc_split(siheap_free_t *cur, address_t size, siheap_type_t type);
 #ifndef __cplusplus
-SINTER_INLINEIFC siheap_header_t *siheap_malloc_split(siheap_free_t *cur, address_t size, siheap_type_t type) {
+PYNTER_INLINEIFC siheap_header_t *siheap_malloc_split(siheap_free_t *cur, address_t size, siheap_type_t type) {
   if (size + sizeof(siheap_free_t) <= cur->header.size) {
     // enough space for a new free node
     // create one
@@ -223,7 +223,7 @@ SINTER_INLINEIFC siheap_header_t *siheap_malloc_split(siheap_free_t *cur, addres
 
   cur->header.type = type;
   cur->header.flag_destroying = cur->header.flag_displayed = cur->header.flag_marked = false;
-#ifdef SINTER_DEBUG_MEMORY_CHECK
+#ifdef PYNTER_DEBUG_MEMORY_CHECK
   cur->header.internal_refcount = 0;
 #endif
   return &cur->header;
@@ -235,7 +235,7 @@ SINTER_INLINEIFC siheap_header_t *siheap_malloc_split(siheap_free_t *cur, addres
  *
  * The allocation is returned with a reference count of 1.
  */
-SINTER_INLINE siheap_header_t *siheap_malloc(address_t size, siheap_type_t type) {
+PYNTER_INLINE siheap_header_t *siheap_malloc(address_t size, siheap_type_t type) {
   if (size < sizeof(siheap_free_t)) {
     size = sizeof(siheap_free_t);
   }
@@ -248,7 +248,7 @@ SINTER_INLINE siheap_header_t *siheap_malloc(address_t size, siheap_type_t type)
 
 void siheap_mdestroy(siheap_header_t *ent);
 
-SINTER_INLINE siheap_header_t *siheap_mfree_inner(siheap_header_t *ent) {
+PYNTER_INLINE siheap_header_t *siheap_mfree_inner(siheap_header_t *ent) {
   assert(ent->size >= sizeof(siheap_free_t));
   if (ent->flag_marked) {
     SIBUGM("Freeing marked object\n");
@@ -279,7 +279,7 @@ SINTER_INLINE siheap_header_t *siheap_mfree_inner(siheap_header_t *ent) {
     ent->size = ent->size + next->size;
     ent->type = sitype_free;
     ent->flag_destroying = ent->flag_displayed = ent->flag_marked = false;
-#ifdef SINTER_DEBUG_MEMORY_CHECK
+#ifdef PYNTER_DEBUG_MEMORY_CHECK
     ent->internal_refcount = 0;
 #endif
     entf->prev_free = nextf->prev_free;
@@ -306,7 +306,7 @@ SINTER_INLINE siheap_header_t *siheap_mfree_inner(siheap_header_t *ent) {
 
     ent->type = sitype_free;
     ent->flag_destroying = ent->flag_displayed = ent->flag_marked = false;
-#ifdef SINTER_DEBUG_MEMORY_CHECK
+#ifdef PYNTER_DEBUG_MEMORY_CHECK
     ent->internal_refcount = 0;
 #endif
     entf->prev_free = NULL;
@@ -318,7 +318,7 @@ SINTER_INLINE siheap_header_t *siheap_mfree_inner(siheap_header_t *ent) {
   }
 }
 
-SINTER_INLINE siheap_header_t *siheap_mfree(siheap_header_t *ent) {
+PYNTER_INLINE siheap_header_t *siheap_mfree(siheap_header_t *ent) {
   assert(ent->refcount == 0);
   assert(ent->type != sitype_free);
   siheap_mdestroy(ent);
@@ -327,14 +327,14 @@ SINTER_INLINE siheap_header_t *siheap_mfree(siheap_header_t *ent) {
 
 siheap_header_t *siheap_mrealloc(siheap_header_t *ent, address_t newsize);
 
-SINTER_INLINE void siheap_deref(void *vent) {
+PYNTER_INLINE void siheap_deref(void *vent) {
   assert(vent);
   siheap_header_t *ent = (siheap_header_t *) vent;
   if (ent->flag_destroying) {
     // this object is in a cycle
     return;
   }
-#ifdef SINTER_DEBUG
+#ifdef PYNTER_DEBUG
   assert(ent->refcount > 0 || siheap_sweeping);
   assert(ent->type != sitype_free || siheap_sweeping);
 #endif
@@ -347,34 +347,34 @@ SINTER_INLINE void siheap_deref(void *vent) {
   }
 }
 
-SINTER_INLINE void siheap_derefbox(sinanbox_t ent) {
+PYNTER_INLINE void siheap_derefbox(sinanbox_t ent) {
   if (NANBOX_ISPTR(ent)) {
     siheap_deref(SIHEAP_NANBOXTOPTR(ent));
   }
 }
 
-#ifdef SINTER_DEBUG_MEMORY_CHECK
-SINTER_INLINE void siheap_intref(void *vent) {
+#ifdef PYNTER_DEBUG_MEMORY_CHECK
+PYNTER_INLINE void siheap_intref(void *vent) {
   assert(vent);
   siheap_header_t *ent = (siheap_header_t *) vent;
   assert(ent->type != sitype_free);
   ent->internal_refcount += 1;
 }
 
-SINTER_INLINE void siheap_intrefbox(sinanbox_t ent) {
+PYNTER_INLINE void siheap_intrefbox(sinanbox_t ent) {
   if (NANBOX_ISPTR(ent)) {
     siheap_intref(SIHEAP_NANBOXTOPTR(ent));
   }
 }
 
-SINTER_INLINE void siheap_intderef(void *vent) {
+PYNTER_INLINE void siheap_intderef(void *vent) {
   assert(vent);
   siheap_header_t *ent = (siheap_header_t *) vent;
   assert(ent->type != sitype_free);
   ent->internal_refcount -= 1;
 }
 
-SINTER_INLINE void siheap_intderefbox(sinanbox_t ent) {
+PYNTER_INLINE void siheap_intderefbox(sinanbox_t ent) {
   if (NANBOX_ISPTR(ent)) {
     siheap_intderef(SIHEAP_NANBOXTOPTR(ent));
   }

@@ -17,11 +17,11 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <sinter.h>
-#include <sinter/display.h>
-#include <sinter/heap_obj.h>
-#include <sinter/program.h>
-#include <sinter/vm.h>
+#include <pynter.h>
+#include <pynter/display.h>
+#include <pynter/heap_obj.h>
+#include <pynter/program.h>
+#include <pynter/vm.h>
 
 // For more information on the sysfs interface,
 // - https://docs.ev3dev.org/projects/lego-linux-drivers/en/ev3dev-stretch/index.html
@@ -62,7 +62,7 @@ enum ev3_p_type {
 // buffer to hold snprintf results
 // assume any call to a function in this file might alter this path
 // (i.e. so just snprintf and then pass it to fopen() immediately)
-// note: this is safe because sinter is single-threaded
+// note: this is safe because pynter is single-threaded
 static char ev3_path_buf[128];
 // examples of paths:
 // /sys/class/tacho-motor/motor8/duty_cycle
@@ -192,7 +192,7 @@ static int find_peripheral(const char *const sysfs_dir, const char *const sysfs_
 #define CHECK_ARGC(n)                                                                              \
   do {                                                                                             \
     if (argc < (n)) {                                                                              \
-      sifault(sinter_fault_function_arity);                                                        \
+      sifault(pynter_fault_function_arity);                                                        \
       return NANBOX_OFEMPTY();                                                                     \
     }                                                                                              \
   } while (0)
@@ -201,7 +201,7 @@ static int find_peripheral(const char *const sysfs_dir, const char *const sysfs_
 #define CHECK_P_ID(arg)                                                                            \
   do {                                                                                             \
     if (!NANBOX_ISINT(arg)) {                                                                      \
-      sifault(sinter_fault_type);                                                                  \
+      sifault(pynter_fault_type);                                                                  \
       return NANBOX_OFEMPTY();                                                                     \
     }                                                                                              \
   } while (0)
@@ -657,7 +657,7 @@ static sinanbox_t ev3_touchSensorPressed(uint8_t argc, sinanbox_t *argv) {
   return NANBOX_OFUNDEF();
 }
 
-static svm_constant_t *hello_world_string = NULL;
+static pvm_constant_t *hello_world_string = NULL;
 
 // ev3_hello()
 static sinanbox_t ev3_hello(uint8_t argc, sinanbox_t *argv) {
@@ -936,7 +936,7 @@ void setup_internals(void) {
   atexit(reset_ev3);
 
   static const char *hello_world_cstr = "Hello there! Welcome to LEGO EV3 (adapted by CS1101S)!";
-  hello_world_string = malloc(sizeof(svm_constant_t) + strlen(hello_world_cstr) + 1);
+  hello_world_string = malloc(sizeof(pvm_constant_t) + strlen(hello_world_cstr) + 1);
   hello_world_string->type = 1;
   hello_world_string->length = strlen(hello_world_cstr) + 1;
   strcpy((char *)hello_world_string->data, hello_world_cstr);

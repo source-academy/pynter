@@ -1,5 +1,5 @@
-#ifndef SINTER_NANBOX_H
-#define SINTER_NANBOX_H
+#ifndef PYNTER_NANBOX_H
+#define PYNTER_NANBOX_H
 
 #include "config.h"
 
@@ -9,7 +9,7 @@
 #include "fault.h"
 
 /**
- * Sinter 32-bit NaN-box
+ * Pynter 32-bit NaN-box
  *
  * In a 32-bit float, a NaN is any value which has the 8 exponent bits set and
  * a nonzero mantissa field. Normal float operations only produce the canonical
@@ -158,39 +158,39 @@ inline int32_t nanbox_int(sinanbox_t val) {
 extern "C" {
 #endif
 
-SINTER_INLINE _Bool nanbox_isfloat(sinanbox_t v) {
+PYNTER_INLINE _Bool nanbox_isfloat(sinanbox_t v) {
   uint32_t i = v.as_u32;
   return ((i & 0x7f800000) != 0x7f800000) || ((i & 0x7fffff) == 0) || i == 0x7fc00000;
 }
 
-SINTER_INLINE float nanbox_tofloat(sinanbox_t v) {
+PYNTER_INLINE float nanbox_tofloat(sinanbox_t v) {
   if (NANBOX_ISINT(v)) {
     return (float) NANBOX_INT(v);
   } else if (NANBOX_ISFLOAT(v)) {
     return NANBOX_FLOAT(v);
   } else {
-    sifault(sinter_fault_type);
+    sifault(pynter_fault_type);
     return 0;
   }
 }
 
-SINTER_INLINE uint32_t nanbox_tou32(sinanbox_t v) {
+PYNTER_INLINE uint32_t nanbox_tou32(sinanbox_t v) {
   if (NANBOX_ISINT(v)) {
     return (uint32_t) NANBOX_INT(v);
   } else if (NANBOX_ISFLOAT(v)) {
     return (uint32_t) NANBOX_FLOAT(v);
   }
-  sifault(sinter_fault_type);
+  sifault(pynter_fault_type);
   return 0;
 }
 
-SINTER_INLINE int32_t nanbox_toi32(sinanbox_t v) {
+PYNTER_INLINE int32_t nanbox_toi32(sinanbox_t v) {
   if (NANBOX_ISINT(v)) {
     return NANBOX_INT(v);
   } else if (NANBOX_ISFLOAT(v)) {
     return (int32_t) NANBOX_FLOAT(v);
   }
-  sifault(sinter_fault_type);
+  sifault(pynter_fault_type);
   return 0;
 }
 
