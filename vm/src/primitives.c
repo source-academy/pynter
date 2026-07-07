@@ -17,7 +17,8 @@
 
 /**
  * This file contains the implementations (in C) of all 92 functions in the Source
- * standard library.
+ * standard library, plus a handful of py-slang (Python frontend) additions
+ * appended at the end (see SIVMFN_PRIMITIVE_COUNT in internal_fn.h).
  */
 
 static void debug_display_argv(unsigned int argc, sinanbox_t *argv) {
@@ -99,6 +100,74 @@ static sinanbox_t sivmfn_prim_is_string(uint8_t argc, sinanbox_t *argv) {
 static sinanbox_t sivmfn_prim_is_undefined(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
   return NANBOX_OFBOOL(NANBOX_ISUNDEF(*argv));
+}
+
+/**
+ * py-slang (Python frontend) additions: Python's numeric tower distinguishes
+ * int and float at the type-predicate level (is_integer()/is_float()), unlike
+ * Source's single is_number(). is_complex() always reports false: Pynter has
+ * no complex-number representation, so a value can never be one.
+ */
+static sinanbox_t sivmfn_prim_is_integer(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFBOOL(NANBOX_ISINT(*argv));
+}
+
+static sinanbox_t sivmfn_prim_is_float(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFBOOL(NANBOX_ISFLOAT(*argv));
+}
+
+static sinanbox_t sivmfn_prim_is_complex(uint8_t argc, sinanbox_t *argv) {
+  (void) argc; (void) argv;
+  return NANBOX_OFBOOL(false);
+}
+
+/**
+ * arity(f): returns the number of parameters f expects. Backs py-slang's
+ * misc.ts `arity()` builtin, used by e.g. stream.prelude.ts's `is_stream` to
+ * check that a stream's tail is a nullary function. A continuation
+ * (sitype_intcont, e.g. a stream's lazily-built tail) is always invoked with
+ * 0 arguments by convention, so it always reports arity 0.
+ */
+static sinanbox_t sivmfn_prim_arity(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  sinanbox_t v = *argv;
+
+  if (NANBOX_ISPTR(v)) {
+    siheap_header_t *obj = SIHEAP_NANBOXTOPTR(v);
+    if (obj->type == sitype_function) {
+      return NANBOX_OFINT(((siheap_function_t *) obj)->code->num_args);
+    }
+    if (obj->type == sitype_intcont) {
+      return NANBOX_OFINT(0);
+    }
+  }
+
+  sifault(pynter_fault_type);
+  return NANBOX_OFEMPTY();
+}
+
+/**
+ * gen_list(n): allocates an n-element array pre-filled with None. Backs
+ * py-slang's list.prelude.ts `_gen_list` helper (used by `build_list` to
+ * allocate before filling each slot via ordinary subscript assignment) —
+ * there's no existing Source-library primitive for "array of N nones".
+ */
+static sinanbox_t sivmfn_prim_gen_list(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  int32_t n = NANBOX_TOI32(argv[0]);
+  if (n < 0) {
+    sifault(pynter_fault_type);
+    return NANBOX_OFEMPTY();
+  }
+
+  siheap_array_t *arr = siarray_new(n);
+  for (int32_t i = 0; i < n; ++i) {
+    siarray_put(arr, i, NANBOX_OFNULL());
+  }
+
+  return SIHEAP_PTRTONANBOX(arr);
 }
 
 /******************************************************************************
@@ -1688,5 +1757,12 @@ sivmfnptr_t sivmfn_primitives[] = {
   sivmfn_prim_stream_to_list,
   sivmfn_prim_tail,
   /* stringify */ sivmfn_prim_unimpl, // TODO: do we want this?
-  /* prompt */ sivmfn_prim_unimpl // TODO: need to call out to host
+  /* prompt */ sivmfn_prim_unimpl, // TODO: need to call out to host
+  // py-slang (Python frontend) additions, appended rather than inserted
+  // alphabetically so none of the indices above shift.
+  sivmfn_prim_is_integer,
+  sivmfn_prim_is_float,
+  sivmfn_prim_is_complex,
+  sivmfn_prim_gen_list,
+  sivmfn_prim_arity
 };
