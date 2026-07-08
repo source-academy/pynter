@@ -119,7 +119,8 @@ static sinanbox_t sivmfn_prim_is_float(uint8_t argc, sinanbox_t *argv) {
 }
 
 static sinanbox_t sivmfn_prim_is_complex(uint8_t argc, sinanbox_t *argv) {
-  (void) argc; (void) argv;
+  CHECK_ARGC(1);
+  (void) argv;
   return NANBOX_OFBOOL(false);
 }
 
