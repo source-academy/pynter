@@ -34,7 +34,22 @@ static inline void unimpl_instr() {
 }
 #endif
 
+/**
+ * Coerces a boolean nanbox to the int (0 or 1) it represents for `==`/`!=`/
+ * ordering purposes (Python's bool is an int subtype: `True == 1` is true).
+ * Every other type passes through unchanged.
+ *
+ * Deliberately NOT used by `is`/`is not` (op_eq_p/op_neq_p below): identity
+ * must keep bool and int distinct types (`1 is True` is false), unlike `==`.
+ */
+static inline sinanbox_t nanbox_int_if_bool(sinanbox_t v) {
+  return NANBOX_ISBOOL(v) ? NANBOX_OFINT(NANBOX_BOOL(v)) : v;
+}
+
 bool sivm_equal(sinanbox_t l, sinanbox_t r) {
+  l = nanbox_int_if_bool(l);
+  r = nanbox_int_if_bool(r);
+
   if (NANBOX_GETTYPE(l) == NANBOX_GETTYPE(r) && NANBOX_IDENTICAL(l, r)) {
     // if they are *identical* then they are equal provided they are not NaN
     return !NANBOX_IDENTICAL(l, NANBOX_CANONICAL_NAN);
@@ -56,11 +71,31 @@ bool sivm_equal(sinanbox_t l, sinanbox_t r) {
   } else if (NANBOX_ISPTR(l) & NANBOX_ISPTR(r)) {
     siheap_header_t *hv0 = SIHEAP_NANBOXTOPTR(l);
     siheap_header_t *hv1 = SIHEAP_NANBOXTOPTR(r);
-    if (siheap_is_string(hv0) && siheap_is_string(hv1)) {
+    if (hv0 == hv1) {
+      // Same object: equal outright, and (for arrays) avoids infinite
+      // recursion on a self-referential array (mirrors CPython's `x is y`
+      // identity-first shortcut in container comparison).
+      return true;
+    } else if (siheap_is_string(hv0) && siheap_is_string(hv1)) {
       return strcmp(sistrobj_tocharptr(hv0), sistrobj_tocharptr(hv1)) == 0;
+    } else if (hv0->type == sitype_array && hv1->type == sitype_array) {
+      // Python lists compare structurally, element-wise (unlike Source
+      // pairs/arrays, which only ever compared by reference here before).
+      siheap_array_t *la = (siheap_array_t *) hv0;
+      siheap_array_t *ra = (siheap_array_t *) hv1;
+      if (la->count != ra->count) {
+        return false;
+      }
+      for (address_t i = 0; i < la->count; i++) {
+        if (!sivm_equal(siarray_get(la, i), siarray_get(ra, i))) {
+          return false;
+        }
+      }
+      return true;
     } else {
-      // for arrays and functions, identical only if they are the SAME object
-      return hv0 == hv1;
+      // functions (and any other non-array, non-string heap object):
+      // identical only if they are the SAME object.
+      return false;
     }
   } else {
     // different types, so not equal
@@ -484,8 +519,9 @@ static void main_loop(void) {
     }
 
 #define COMPARISON_OP(op) { \
-      sinanbox_t v1 = sistack_pop(); \
-      sinanbox_t v0 = sistack_pop(); \
+      /* Booleans order as the ints they are (True < 2 is true), as in CPython. */ \
+      sinanbox_t v1 = nanbox_int_if_bool(sistack_pop()); \
+      sinanbox_t v0 = nanbox_int_if_bool(sistack_pop()); \
       sinanbox_t r; \
  \
       if (NANBOX_ISNUMERIC(v0) && NANBOX_ISNUMERIC(v1)) { \
@@ -552,6 +588,28 @@ static void main_loop(void) {
       bool r = sivm_equal(v1, v0);
 
       if (this_opcode >= op_neq_g) {
+        r = !r;
+      }
+
+      sistack_push(NANBOX_OFBOOL(r));
+      siheap_derefbox(v0);
+      siheap_derefbox(v1);
+      ADVANCE_PCONE();
+    }
+
+    // Python `is`/`is not`: identity, not `eq_g`/`neq_g`'s structural equality
+    // (see sivm_equal above) — deliberately does not coerce bool to int (so
+    // `1 is True` is false) and, for heap pointers, never treats two distinct
+    // objects as identical (so `[1, 2] is [1, 2]` is false even though
+    // `[1, 2] == [1, 2]` is true). A py-slang PVML extension: no equivalent
+    // in Sinter/SVML, since Source has no `is` operator.
+    case op_eq_p:
+    case op_neq_p: {
+      sinanbox_t v0 = sistack_pop();
+      sinanbox_t v1 = sistack_pop();
+      bool r = NANBOX_GETTYPE(v0) == NANBOX_GETTYPE(v1) && NANBOX_IDENTICAL(v0, v1);
+
+      if (this_opcode == op_neq_p) {
         r = !r;
       }
 
