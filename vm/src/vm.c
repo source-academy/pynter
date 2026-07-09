@@ -50,7 +50,7 @@ bool sivm_equal(sinanbox_t l, sinanbox_t r) {
   l = nanbox_int_if_bool(l);
   r = nanbox_int_if_bool(r);
 
-  if (NANBOX_GETTYPE(l) == NANBOX_GETTYPE(r) && NANBOX_IDENTICAL(l, r)) {
+  if (NANBOX_IDENTICAL(l, r)) {
     // if they are *identical* then they are equal provided they are not NaN
     return !NANBOX_IDENTICAL(l, NANBOX_CANONICAL_NAN);
   } else if (NANBOX_ISNUMERIC(l) && NANBOX_ISNUMERIC(r)) {
@@ -607,7 +607,7 @@ static void main_loop(void) {
     case op_neq_p: {
       sinanbox_t v0 = sistack_pop();
       sinanbox_t v1 = sistack_pop();
-      bool r = NANBOX_GETTYPE(v0) == NANBOX_GETTYPE(v1) && NANBOX_IDENTICAL(v0, v1);
+      bool r = NANBOX_IDENTICAL(v0, v1);
 
       if (this_opcode == op_neq_p) {
         r = !r;
