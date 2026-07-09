@@ -129,10 +129,15 @@ const char *get_opcode_name(opcode_t op) {
     "neg_f",
     "neq_g",
     "neq_f",
-    "neq_b"
+    "neq_b",
+    "eq_p",
+    "neq_p"
+    // 0x57-0x5A (floordiv.g/floordiv.f/newiter/for.iter) are py-slang PVML
+    // extensions with no Pynter opcode yet, so op_neq_p is the array's last
+    // entry; the bounds check below rejects anything past it before indexing.
   };
 
-  if (op > op_neq_b) {
+  if (op > op_neq_p) {
     return "invalid_opcode";
   } else {
     return opcode_names[op];

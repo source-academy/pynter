@@ -2,6 +2,11 @@
 
 [![Coverage Status](https://coveralls.io/repos/github/source-academy/pynter/badge.svg?branch=master)](https://coveralls.io/github/source-academy/pynter?branch=master)
 
+**Target: Python (SICPy) Chapter 3.** Pynter's goal is a native VM that correctly runs everything
+py-slang's PVML compiler produces for Python §3 — not later chapters, and not the general
+Source/JS semantics it inherited from Sinter. When a feature or bugfix decision is ambiguous, "does
+this match Python §3?" is the question, not "does this match Source/Sinter?".
+
 Name etymology: portmanteau of <strong>Py</strong>thon and Si<strong>nter</strong>.
 
 Pynter is a fork of [Sinter](https://github.com/source-academy/sinter) — an implementation of the
@@ -30,7 +35,7 @@ For implementation details, see [here](vm/docs/impl.md).
 
 ## Usage notes
 
-Pynter implements most of Source §3, except:
+Pynter implements most of Python (SICPy) §3, except:
 
 - Numbers are single-precision floating points. This means that
   `16777216 + 1 === 16777216`.
