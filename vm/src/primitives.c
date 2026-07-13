@@ -158,15 +158,25 @@ static sinanbox_t sivmfn_prim_arity(uint8_t argc, sinanbox_t *argv) {
 static sinanbox_t sivmfn_prim_gen_list(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
   int32_t n = NANBOX_TOI32(argv[0]);
-  if (n < 0) {
+  // Reject negative sizes, and cap at NANBOX_INTMAX (consistent with other
+  // collection-size limits in the VM, e.g. stream_reverse's index check
+  // below): an unbounded n's allocation size (alloc_size * sizeof(sinanbox_t)
+  // in siarray_new) can overflow, turning a huge request into a small
+  // allocation and a heap buffer overflow when writing to it.
+  if (n < 0 || n > NANBOX_INTMAX) {
     sifault(pynter_fault_type);
     return NANBOX_OFEMPTY();
   }
 
+  // Populate the backing storage directly rather than through siarray_put:
+  // the array is freshly allocated to exactly this capacity, so the
+  // per-element bounds/reallocation checks siarray_put does are pure
+  // overhead here — set count once at the end instead.
   siheap_array_t *arr = siarray_new(n);
   for (int32_t i = 0; i < n; ++i) {
-    siarray_put(arr, i, NANBOX_OFNULL());
+    arr->data->data[i] = NANBOX_OFNULL();
   }
+  arr->count = n;
 
   return SIHEAP_PTRTONANBOX(arr);
 }
