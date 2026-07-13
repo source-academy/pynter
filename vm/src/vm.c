@@ -759,6 +759,49 @@ static void main_loop(void) {
       break;
     }
 
+    // Iterator opcodes: py-slang's Python-§3-only `for` loop grammar is
+    // validated range()-only upstream (ForRangeOnlyValidator), so the only
+    // value op_new_iter ever sees here is a range iterator range() itself
+    // already produced — nothing else reaches this opcode, so this is
+    // identity pass-through, not array-wrapping (contrast PVMLInterpreter's
+    // browser-pathway NEWITER, which also handles arrays for chapter 4's
+    // unrestricted `for`).
+    case op_new_iter: {
+      sinanbox_t v = sistack_pop();
+      if (NANBOX_ISPTR(v) && ((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))->type == sitype_iterator) {
+        sistack_push(v);
+        ADVANCE_PCONE();
+      }
+      sifault(pynter_fault_type);
+      return;
+    }
+
+    // Same relative-branch shape as op_br_f (DECLOPSTRUCT(op_offset), taken
+    // branch adds instr->offset + sizeof(*instr) to the PC) — py-slang's
+    // assembler encodes FOR_ITER's operand identically to BRF/BR. Leaves the
+    // iterator on the stack below the pushed value while going (matching
+    // PVMLCompiler.visitForStmt's stack layout), pops + derefs it only on
+    // exhaustion.
+    case op_for_iter: {
+      DECLOPSTRUCT(op_offset);
+      sinanbox_t v = sistack_peek(0);
+      if (!NANBOX_ISPTR(v) || ((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))->type != sitype_iterator) {
+        sifault(pynter_fault_type);
+        return;
+      }
+      siheap_iterator_t *iter = (siheap_iterator_t *) SIHEAP_NANBOXTOPTR(v);
+      const bool going = iter->step > 0 ? iter->current < iter->stop : iter->current > iter->stop;
+      if (going) {
+        sistack_push(NANBOX_WRAP_INT(iter->current));
+        iter->current += iter->step;
+        ADVANCE_PCI();
+      } else {
+        siheap_derefbox(sistack_pop());
+        sistate.pc += instr->offset + sizeof(*instr);
+        break;
+      }
+    }
+
     case op_call:
     case op_call_t: {
       // There are three types of functions:
