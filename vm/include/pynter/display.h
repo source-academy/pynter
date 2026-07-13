@@ -60,13 +60,19 @@ PYNTER_INLINEIFC void sidisplay_nanbox(sinanbox_t v, bool is_error) {
     SIVMFN_PRINT((int32_t) NANBOX_INT(v), is_error);
     break;
   case NANBOX_TBOOL:
-    SIVMFN_PRINT(NANBOX_BOOL(v) ? "true" : "false", is_error);
+    // Python's True/False, not Sinter/Source's lowercase true/false — Pynter
+    // is a Python-specific fork of Sinter (see pynter/README.md), and this is
+    // the shared, single site that formats a bool for any print()/display()
+    // call, nested inclusive (arrays recurse back into this same switch).
+    SIVMFN_PRINT(NANBOX_BOOL(v) ? "True" : "False", is_error);
     break;
   case NANBOX_TUNDEF:
     SIVMFN_PRINT("undefined", is_error);
     break;
   case NANBOX_TNULL:
-    SIVMFN_PRINT("null", is_error);
+    // Python's None, not Sinter/Source's null — see the NANBOX_TBOOL case
+    // just above for the same rationale.
+    SIVMFN_PRINT("None", is_error);
     break;
   case NANBOX_TIFN:
     SIVMFN_PRINT("<internal function>", is_error);
