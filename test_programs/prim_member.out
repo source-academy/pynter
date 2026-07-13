@@ -1,7 +1,7 @@
-[1, [2, [3, [4, [5, null]]]]]
-[2, [3, [4, [5, null]]]]
-[5, null]
-null
-[[], [3, [[], [4, null]]]]
-null
+[1, [2, [3, [4, [5, None]]]]]
+[2, [3, [4, [5, None]]]]
+[5, None]
+None
+[[], [[], [3, [[], [4, None]]]]]
+None
 Program exited with fault no fault and result type null: null
