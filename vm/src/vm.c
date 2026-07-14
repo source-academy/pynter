@@ -793,7 +793,12 @@ static void main_loop(void) {
       const bool going = iter->step > 0 ? iter->current < iter->stop : iter->current > iter->stop;
       if (going) {
         sistack_push(NANBOX_WRAP_INT(iter->current));
-        iter->current += iter->step;
+        // Unsigned addition wraps (well-defined); signed overflow is UB.
+        // current/step are both derived from arbitrary user-supplied
+        // range() arguments, so current + step overflowing int32_t is
+        // reachable (e.g. range(INT32_MAX - 1, INT32_MAX, 2): the first
+        // iteration's increment already overflows), not just theoretical.
+        iter->current = (int32_t) ((uint32_t) iter->current + (uint32_t) iter->step);
         ADVANCE_PCI();
       } else {
         siheap_derefbox(sistack_pop());
