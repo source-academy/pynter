@@ -468,6 +468,15 @@ static void main_loop(void) {
     // operands are ints (2 % 2 is the int 0, not the float 0.0), matching
     // op_add_g/op_sub_g/op_mul_g's case-0 int branch just above, not
     // op_div_g's "always float" true-division behavior.
+    //
+    // The int/int branch below needs an explicit zero-divisor check that the
+    // float branches don't: C's `%` on ints is undefined behaviour (a SIGFPE
+    // crash on most platforms) for a zero divisor, unlike fmodf(x, 0.0),
+    // which is well-defined (NaN) — the previous version of this opcode
+    // never crashed here only because it (incorrectly) ran every case
+    // through fmodf, floats included; preserving int-ness in the fix means
+    // this case now takes the real `%` operator, so it needs the guard
+    // fmodf was accidentally providing for free before.
     case op_mod_g:
     case op_mod_f: {
       sinanbox_t v1 = sistack_pop();
@@ -477,6 +486,10 @@ static void main_loop(void) {
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
       case 0: { /* neither are floats */
         int32_t divisor = NANBOX_INT(v1);
+        if (divisor == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
         int32_t m = NANBOX_INT(v0) % divisor;
         if (m != 0 && (m < 0) != (divisor < 0)) {
           m += divisor;
