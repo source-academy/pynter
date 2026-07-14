@@ -461,6 +461,22 @@ static void main_loop(void) {
       ADVANCE_PCONE();
     }
 
+    // Python `%` is floored modulo (result takes the divisor's sign, e.g.
+    // -7 % 3 == 2) unlike C's fmod/fmodf (which takes the dividend's sign,
+    // e.g. fmodf(-7, 3) == -1) — see py-slang's own reference semantics,
+    // engines/cse/utils.ts's pythonMod. It also preserves int-ness when both
+    // operands are ints (2 % 2 is the int 0, not the float 0.0), matching
+    // op_add_g/op_sub_g/op_mul_g's case-0 int branch just above, not
+    // op_div_g's "always float" true-division behavior.
+    //
+    // The int/int branch below needs an explicit zero-divisor check that the
+    // float branches don't: C's `%` on ints is undefined behaviour (a SIGFPE
+    // crash on most platforms) for a zero divisor, unlike fmodf(x, 0.0),
+    // which is well-defined (NaN) — the previous version of this opcode
+    // never crashed here only because it (incorrectly) ran every case
+    // through fmodf, floats included; preserving int-ness in the fix means
+    // this case now takes the real `%` operator, so it needs the guard
+    // fmodf was accidentally providing for free before.
     case op_mod_g:
     case op_mod_f: {
       sinanbox_t v1 = sistack_pop();
@@ -468,18 +484,46 @@ static void main_loop(void) {
       ARITHMETIC_TYPECHECK();
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
-      case 0: /* neither are floats */
-        r = NANBOX_OFFLOAT(fmodf(NANBOX_INT(v0),  NANBOX_INT(v1)));
+      case 0: { /* neither are floats */
+        int32_t divisor = NANBOX_INT(v1);
+        if (divisor == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
+        int32_t m = NANBOX_INT(v0) % divisor;
+        if (m != 0 && (m < 0) != (divisor < 0)) {
+          m += divisor;
+        }
+        r = NANBOX_WRAP_INT(m);
         break;
-      case 1: /* v0 is float */
-        r = NANBOX_OFFLOAT(fmodf(NANBOX_FLOAT(v0), NANBOX_INT(v1)));
+      }
+      case 1: { /* v0 is float */
+        float divisor = (float) NANBOX_INT(v1);
+        float m = fmodf(NANBOX_FLOAT(v0), divisor);
+        if (m != 0 && (m < 0) != (divisor < 0)) {
+          m += divisor;
+        }
+        r = NANBOX_OFFLOAT(m);
         break;
-      case 2: /* v1 is float */
-        r = NANBOX_OFFLOAT(fmodf(NANBOX_INT(v0), NANBOX_FLOAT(v1)));
+      }
+      case 2: { /* v1 is float */
+        float divisor = NANBOX_FLOAT(v1);
+        float m = fmodf(NANBOX_INT(v0), divisor);
+        if (m != 0 && (m < 0) != (divisor < 0)) {
+          m += divisor;
+        }
+        r = NANBOX_OFFLOAT(m);
         break;
-      case 3: /* both are float */
-        r = NANBOX_OFFLOAT(fmodf(NANBOX_FLOAT(v0), NANBOX_FLOAT(v1)));
+      }
+      case 3: { /* both are float */
+        float divisor = NANBOX_FLOAT(v1);
+        float m = fmodf(NANBOX_FLOAT(v0), divisor);
+        if (m != 0 && (m < 0) != (divisor < 0)) {
+          m += divisor;
+        }
+        r = NANBOX_OFFLOAT(m);
         break;
+      }
       default:
         SIBUG();
         sifault(pynter_fault_internal_error);
