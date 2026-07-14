@@ -535,6 +535,154 @@ static void main_loop(void) {
       ADVANCE_PCONE();
     }
 
+    // Python `//` floors toward negative infinity (result takes the
+    // divisor's sign, e.g. -7 // 3 == -3), unlike C's `/` on ints (truncates
+    // toward zero, e.g. -7 / 3 == -2 in C) — same floored-division family as
+    // `%` just above (indeed floor(a/b)*b + (a mod b) == a always holds).
+    // Stays int-typed when both operands are ints, matching op_mod_g's
+    // case-0 branch, not op_div_g's "always float" true division. Unlike
+    // op_div_g/op_mod_g elsewhere in this file (which predate — and don't
+    // check for — zero divisors), this is new code with no existing
+    // callers to stay bit-compatible with, so it raises Python's actual
+    // ZeroDivisionError (pynter_fault_divide_by_zero) rather than silently
+    // producing whatever IEEE float division or C's UB on `%0` would give.
+    case op_floordiv_g:
+    case op_floordiv_f: {
+      sinanbox_t v1 = sistack_pop();
+      sinanbox_t v0 = sistack_pop();
+      ARITHMETIC_TYPECHECK();
+      sinanbox_t r;
+      switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
+      case 0: { /* neither are floats */
+        int32_t divisor = NANBOX_INT(v1);
+        if (divisor == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
+        int32_t dividend = NANBOX_INT(v0);
+        int32_t q = dividend / divisor;
+        int32_t rem = dividend % divisor;
+        if (rem != 0 && (rem < 0) != (divisor < 0)) {
+          q -= 1;
+        }
+        r = NANBOX_WRAP_INT(q);
+        break;
+      }
+      case 1: { /* v0 is float */
+        float divisor = (float) NANBOX_INT(v1);
+        if (divisor == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
+        r = NANBOX_OFFLOAT(floorf(NANBOX_FLOAT(v0) / divisor));
+        break;
+      }
+      case 2: { /* v1 is float */
+        float divisor = NANBOX_FLOAT(v1);
+        if (divisor == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
+        r = NANBOX_OFFLOAT(floorf(NANBOX_INT(v0) / divisor));
+        break;
+      }
+      case 3: { /* both are float */
+        float divisor = NANBOX_FLOAT(v1);
+        if (divisor == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
+        r = NANBOX_OFFLOAT(floorf(NANBOX_FLOAT(v0) / divisor));
+        break;
+      }
+      default:
+        SIBUG();
+        sifault(pynter_fault_internal_error);
+        break;
+      }
+      sistack_push(r);
+      /* No need to deref v0 and v1; they are either numbers (which are not on the heap) */
+      /* or they are not (in which case we would have faulted) */
+      ADVANCE_PCONE();
+    }
+
+    // `**`, matching py-slang's own reference semantics (PVMLInterpreter's
+    // powArith): int**int stays int for a non-negative exponent, a negative
+    // exponent (or any float operand) always promotes to float. Python's
+    // ints are arbitrary-precision, but this VM's aren't — like op_mul_g
+    // above, an int result outside the 21-bit range gracefully degrades to
+    // float, computed via double (not a manual integer power loop) since
+    // anything in range is comfortably exact in a double's 52-bit mantissa.
+    // `0 ** negative` is Python's ZeroDivisionError, checked explicitly
+    // since C's pow/powf would otherwise happily return +inf.
+    case op_pow_g: {
+      sinanbox_t v1 = sistack_pop();
+      sinanbox_t v0 = sistack_pop();
+      ARITHMETIC_TYPECHECK();
+      sinanbox_t r;
+      switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
+      case 0: { /* neither are floats: base ** exponent, both int */
+        int32_t base = NANBOX_INT(v0);
+        int32_t exponent = NANBOX_INT(v1);
+        if (exponent < 0) {
+          if (base == 0) {
+            sifault(pynter_fault_divide_by_zero);
+            return;
+          }
+          r = NANBOX_OFFLOAT(powf((float) base, (float) exponent));
+        } else {
+          // Bounds-check the double result *before* any llround/int64
+          // conversion, not after (unlike NANBOX_WRAP_INT's usual
+          // int64-then-compare pattern, used elsewhere for op_mul_g): a huge
+          // exponent can send pow() to +inf or any magnitude vastly beyond
+          // what long long can hold, and llround() on an out-of-range double
+          // is undefined behaviour per the C standard — checking the range
+          // on the double itself is always well-defined, so it must come
+          // first.
+          double result = pow((double) base, (double) exponent);
+          if (result >= NANBOX_INTMIN && result <= NANBOX_INTMAX) {
+            r = NANBOX_OFINT((int32_t) llround(result));
+          } else {
+            r = NANBOX_OFFLOAT((float) result);
+          }
+        }
+        break;
+      }
+      case 1: { /* v0 (base) is float */
+        if (NANBOX_FLOAT(v0) == 0 && NANBOX_INT(v1) < 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
+        r = NANBOX_OFFLOAT(powf(NANBOX_FLOAT(v0), (float) NANBOX_INT(v1)));
+        break;
+      }
+      case 2: { /* v1 (exponent) is float */
+        if (NANBOX_INT(v0) == 0 && NANBOX_FLOAT(v1) < 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
+        r = NANBOX_OFFLOAT(powf((float) NANBOX_INT(v0), NANBOX_FLOAT(v1)));
+        break;
+      }
+      case 3: { /* both float */
+        if (NANBOX_FLOAT(v0) == 0 && NANBOX_FLOAT(v1) < 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
+        r = NANBOX_OFFLOAT(powf(NANBOX_FLOAT(v0), NANBOX_FLOAT(v1)));
+        break;
+      }
+      default:
+        SIBUG();
+        sifault(pynter_fault_internal_error);
+        break;
+      }
+      sistack_push(r);
+      /* No need to deref v0 and v1; they are either numbers (which are not on the heap) */
+      /* or they are not (in which case we would have faulted) */
+      ADVANCE_PCONE();
+    }
+
     case op_neg_g:
     case op_neg_f: {
       sinanbox_t v1 = sistack_pop();

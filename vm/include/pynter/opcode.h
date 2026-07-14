@@ -98,9 +98,20 @@ typedef enum __attribute__((__packed__)) {
   op_neq_b    = 0x54,
   op_eq_p     = 0x55,
   op_neq_p    = 0x56,
-  // 0x57-0x58 still reserved: floordiv.g/floordiv.f have no Pynter opcode yet.
+  op_floordiv_g = 0x57,
+  op_floordiv_f = 0x58,
   op_new_iter = 0x59,
-  op_for_iter = 0x5A
+  op_for_iter = 0x5A,
+  // 0x5B-0x64 deliberately left undefined: py-slang PVML extensions
+  // (§1/§2-restricted comparisons, incremental-global-map opcodes,
+  // bigint/complex-constant loads) with no Pynter equivalent and none
+  // planned — see py-slang's opcodes.ts UNSUPPORTED_OPCODE_FEATURES.
+  // op_pow_g's byte value matches py-slang's own OpCodes.POWG (0x65)
+  // directly, rather than taking the next free slot after op_for_iter, so
+  // that landing it natively needs no renumbering on py-slang's side (see
+  // py-slang's PYNTER_ADDITIONAL_SUPPORTED_OPCODES, built for exactly this
+  // non-sequential landing order).
+  op_pow_g = 0x65
 } pynter_opcode_t;
 _Static_assert(sizeof(pynter_opcode_t) == 1, "enum pynter_opcode has wrong size");
 
