@@ -193,6 +193,11 @@ void debug_heap_obj(const siheap_header_t *o) {
     SIDEBUG("function (internal continuation); argc %d", c->argc);
     break;
   }
+  case sitype_iterator: {
+    const siheap_iterator_t *it = (const siheap_iterator_t *) o;
+    SIDEBUG("range iterator; current %d, stop %d, step %d", it->current, it->stop, it->step);
+    break;
+  }
   case sitype_array_data:
   case sitype_empty:
   case sitype_free:
