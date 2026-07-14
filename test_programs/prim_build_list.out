@@ -4,4 +4,4 @@
 [[0], [[1], [[2], [[3], [[4], None]]]]]
 [[0, None], [[1, None], [[2, None], [[3, None], [[4, None], None]]]]]
 [True, [True, [True, [True, [True, None]]]]]
-Program exited with fault no fault and result type null: null
+Program exited with fault no fault and result type none: None

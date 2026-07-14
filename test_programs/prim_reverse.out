@@ -3,4 +3,4 @@ None
 [3, [2, [1, None]]]
 [5, [4, [3, [2, [1, None]]]]]
 [[5], [[4], [[3], [[2], [[1], None]]]]]
-Program exited with fault no fault and result type null: null
+Program exited with fault no fault and result type none: None

@@ -44,7 +44,7 @@ static void set_result(sinanbox_t exec_result, pynter_value_t *result) {
     result->type = pynter_type_undefined;
     break;
   case NANBOX_TNULL:
-    result->type = pynter_type_null;
+    result->type = pynter_type_none;
     break;
   case NANBOX_TIFN:
     result->type = pynter_type_function;
