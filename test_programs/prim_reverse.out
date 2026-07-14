@@ -1,6 +1,6 @@
-null
-[1, null]
-[3, [2, [1, null]]]
-[5, [4, [3, [2, [1, null]]]]]
-[[5], [[4], [[3], [[2], [[1], null]]]]]
+None
+[1, None]
+[3, [2, [1, None]]]
+[5, [4, [3, [2, [1, None]]]]]
+[[5], [[4], [[3], [[2], [[1], None]]]]]
 Program exited with fault no fault and result type null: null
