@@ -17,6 +17,7 @@ target_link_options(pynterwasm
   PRIVATE "SHELL:-s WASM=1" "SHELL:-s ALLOW_MEMORY_GROWTH=1"
   PRIVATE "SHELL:-s MODULARIZE=1" "SHELL:-s EXPORT_NAME=pynterwasm"
   PRIVATE "SHELL:-s EXPORTED_RUNTIME_METHODS='[\"ccall\", \"cwrap\", \"HEAPU8\"]'"
+  PRIVATE "SHELL:--emit-tsd pynterwasm.d.ts"
 )
 
 target_link_libraries(pynterwasm pynter)

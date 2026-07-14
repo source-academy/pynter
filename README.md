@@ -84,6 +84,31 @@ Use the [SVML compiler CLI utility in js-slang](https://github.com/source-academ
 
 Alternatively, you could also try the [web demo](https://source-academy.github.io/pynter/) (not yet deployed under this name), which uses Pynter compiled to WASM.
 
+### Using Pynter's WASM build from npm
+
+The same WASM build that powers the web demo is published as
+[`@sourceacademy/pynter-wasm`](https://www.npmjs.com/package/@sourceacademy/pynter-wasm) — a
+consumer (e.g. [py-slang](https://github.com/source-academy/py-slang)) can `npm install` it
+instead of building Emscripten output locally and vendoring the artifacts by hand.
+
+```
+npm install @sourceacademy/pynter-wasm
+```
+
+`pynterwasm.js`/`pynterwasm.wasm` are the raw Emscripten build output
+(`devices/wasm/wasm/CMakeLists.txt`, `MODULARIZE=1`/`EXPORT_NAME=pynterwasm`); `pynterwasm.d.ts` is
+generated directly from that same build via Emscripten's `--emit-tsd`, so the shipped types always
+match the shipped binary exactly — see [`devices/wasm/npm/README.md`](devices/wasm/npm/README.md)
+for a usage example.
+
+**Publishing/versioning**: released via [`.github/workflows/publish-wasm-npm.yml`](.github/workflows/publish-wasm-npm.yml),
+triggered by a GitHub Release being published (never on a push to `master`) — the npm version
+always matches the release tag. This is deliberate, not an oversight: a release is a reviewed,
+human-decided step, matching this repo's own versioning philosophy for the native `runner` binary,
+and py-slang's own pinned-commit (never floating) policy for consuming Pynter in the first place.
+To publish a new version, cut a GitHub Release with the desired tag (e.g. `v0.3.0`) — the workflow
+builds, packages, and publishes automatically from there.
+
 For convenience, we have included a NPM package that exposes the CLI utility.
 
 Try it out:
