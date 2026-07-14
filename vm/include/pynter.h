@@ -11,7 +11,7 @@ extern "C" {
 
 typedef enum {
   pynter_type_undefined = 1,
-  pynter_type_null = 2,
+  pynter_type_none = 2,
   pynter_type_boolean = 3,
   pynter_type_integer = 4,
   pynter_type_float = 5,

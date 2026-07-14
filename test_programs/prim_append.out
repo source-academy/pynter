@@ -5,4 +5,4 @@ None
 True
 [1, [2, [3, [4, [5, [6, None]]]]]]
 [1, [2, [3, [[4, None], [[5, None], [[6, None], None]]]]]]
-Program exited with fault no fault and result type null: null
+Program exited with fault no fault and result type none: None

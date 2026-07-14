@@ -30,7 +30,7 @@ static const char *fault_names[] = {
 static const char *type_names[] = {
   "unknown",
   "undefined",
-  "null",
+  "none",
   "boolean",
   "integer",
   "float",
@@ -110,11 +110,14 @@ void siwasm_run(unsigned char *code, size_t code_size) {
   case pynter_type_undefined:
     printf("undefined");
     break;
-  case pynter_type_null:
-    printf("null");
+  case pynter_type_none:
+    // Route through sidisplay_nanbox rather than hardcoding null/true/false
+    // here: Pynter is Python-only and prints None/True/False (see display.h),
+    // and these were the two call sites that bypassed that shared formatting.
+    sidisplay_nanbox(NANBOX_OFNULL(), false);
     break;
   case pynter_type_boolean:
-    printf("%s", result.boolean_value ? "true" : "false");
+    sidisplay_nanbox(NANBOX_OFBOOL(result.boolean_value), false);
     break;
   case pynter_type_integer:
     printf("%d", result.integer_value);

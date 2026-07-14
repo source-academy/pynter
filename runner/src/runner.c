@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include <errno.h>
 
+#include <pynter/nanbox.h>
+#include <pynter/display.h>
 #include <pynter.h>
 
 #define eprintf(...) fprintf(stderr, __VA_ARGS__)
@@ -31,7 +33,7 @@ static const char *fault_names[] = {
 static const char *type_names[] = {
   "unknown",
   "undefined",
-  "null",
+  "none",
   "boolean",
   "integer",
   "float",
@@ -108,11 +110,15 @@ int main(int argc, char *argv[]) {
   case pynter_type_undefined:
     printf("undefined");
     break;
-  case pynter_type_null:
-    printf("null");
+  case pynter_type_none:
+    // Route through sidisplay_nanbox rather than hardcoding null/true/false
+    // here: Pynter is Python-only and prints None/True/False (see display.h),
+    // and these were the two call sites in the runner CLI that bypassed that
+    // shared formatting (mirrors the same fix in devices/wasm/wasm/lib.c).
+    sidisplay_nanbox(NANBOX_OFNULL(), false);
     break;
   case pynter_type_boolean:
-    printf("%s", result.boolean_value ? "true" : "false");
+    sidisplay_nanbox(NANBOX_OFBOOL(result.boolean_value), false);
     break;
   case pynter_type_integer:
     printf("%d", result.integer_value);

@@ -5,4 +5,4 @@
 [[], [3, [[], [4, None]]]]
 None
 [...<circular>, ...<circular>]
-Program exited with fault no fault and result type null: null
+Program exited with fault no fault and result type none: None
