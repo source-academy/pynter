@@ -12,14 +12,6 @@ name: Publish pynter-wasm to npm
 # The published package version always matches the release tag (e.g. tag
 # v0.3.0 -> npm version 0.3.0) — one clear, auditable source of truth, not a
 # separately-maintained package.json version or an auto-incrementing counter.
-#
-# Auth: npm Trusted Publishing (OIDC) — no stored NPM_TOKEN secret at all.
-# GitHub issues this job a short-lived OIDC identity token (id-token: write
-# below); npm verifies it against a trusted-publisher record configured on
-# the package at npmjs.com (pointing at this repo + this exact workflow
-# file), and only then allows the publish. Requires an npm CLI recent enough
-# to support it, hence the explicit upgrade step — the version setup-node
-# bundles with Node 20 predates this feature.
 
 on:
   release:
@@ -30,7 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -38,9 +29,6 @@ jobs:
         with:
           node-version: 20
           registry-url: "https://registry.npmjs.org"
-
-      - name: Upgrade npm (Trusted Publishing needs a recent CLI)
-        run: npm install -g npm@latest
 
       - uses: mymindstorm/setup-emsdk@v14
 
@@ -68,3 +56,5 @@ jobs:
       - name: Publish to npm
         working-directory: dist-npm
         run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

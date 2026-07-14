@@ -43,6 +43,3 @@ Published from a GitHub Release on the main repo (`.github/workflows/publish-was
 npm version always matches the release tag. Not published on every push to `master`; a release is
 a deliberate, reviewed step, same as this repo's `runner` binary and py-slang's own pinned-commit
 policy for consuming Pynter.
-
-Publishes via npm Trusted Publishing (OIDC) — no long-lived npm token is stored in this repo at
-all. See the workflow file for the exact mechanics.
