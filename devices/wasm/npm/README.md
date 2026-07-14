@@ -26,7 +26,7 @@ const pynter = await initPynter({
   },
 });
 
-const alloc_heap = pynter.cwrap("siwasm_alloc_heap", undefined, ["number"]);
+const alloc_heap = pynter.cwrap("siwasm_alloc_heap", null, ["number"]);
 const alloc = pynter.cwrap("siwasm_alloc", "number", ["number"]);
 const run = pynter.cwrap("siwasm_run", "number", ["number", "number"]);
 
