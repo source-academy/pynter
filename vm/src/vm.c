@@ -567,11 +567,10 @@ static void main_loop(void) {
     // exponent (or any float operand) always promotes to float. Python's
     // ints are arbitrary-precision, but this VM's aren't — like op_mul_g
     // above, an int result outside the 21-bit range gracefully degrades to
-    // float via NANBOX_WRAP_INT rather than wrapping or crashing, computed
-    // via double (not a manual integer power loop) since anything in range
-    // is comfortably exact in a double's 52-bit mantissa. `0 ** negative` is
-    // Python's ZeroDivisionError, checked explicitly since C's pow/powf
-    // would otherwise happily return +inf.
+    // float, computed via double (not a manual integer power loop) since
+    // anything in range is comfortably exact in a double's 52-bit mantissa.
+    // `0 ** negative` is Python's ZeroDivisionError, checked explicitly
+    // since C's pow/powf would otherwise happily return +inf.
     case op_pow_g: {
       sinanbox_t v1 = sistack_pop();
       sinanbox_t v0 = sistack_pop();
@@ -588,7 +587,20 @@ static void main_loop(void) {
           }
           r = NANBOX_OFFLOAT(powf((float) base, (float) exponent));
         } else {
-          r = NANBOX_WRAP_INT((int64_t) llround(pow((double) base, (double) exponent)));
+          // Bounds-check the double result *before* any llround/int64
+          // conversion, not after (unlike NANBOX_WRAP_INT's usual
+          // int64-then-compare pattern, used elsewhere for op_mul_g): a huge
+          // exponent can send pow() to +inf or any magnitude vastly beyond
+          // what long long can hold, and llround() on an out-of-range double
+          // is undefined behaviour per the C standard — checking the range
+          // on the double itself is always well-defined, so it must come
+          // first.
+          double result = pow((double) base, (double) exponent);
+          if (result >= NANBOX_INTMIN && result <= NANBOX_INTMAX) {
+            r = NANBOX_OFINT((int32_t) llround(result));
+          } else {
+            r = NANBOX_OFFLOAT((float) result);
+          }
         }
         break;
       }
