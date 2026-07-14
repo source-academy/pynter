@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include <emscripten.h>
 
@@ -87,26 +88,36 @@ void siwasm_free(void *ptr) {
   free(ptr);
 }
 
+// Backs the pointer siwasm_run() returns: JS-side callers (see py-slang's
+// pynter-wasm.ts) read the result directly out of WASM memory as an 8-byte
+// {type: u32, value: 4 bytes} struct, which is exactly pynter_value_t's
+// layout on wasm32. Static (not stack-local) so the pointer stays valid
+// after this function returns; zeroed on every call so a faulting run
+// deterministically reports type 0 ("unknown"/no result) rather than
+// leftover data from a previous run.
+static pynter_value_t wasm_result;
+
 EMSCRIPTEN_KEEPALIVE
-void siwasm_run(unsigned char *code, size_t code_size) {
+pynter_value_t *siwasm_run(unsigned char *code, size_t code_size) {
   pynter_printer_float = print_float;
   pynter_printer_integer = print_integer;
   pynter_printer_string = print_string;
   pynter_printer_flush = print_flush;
 
-  pynter_value_t result;
-  pynter_fault_t fault = (uint8_t) pynter_run(code, code_size, &result);
+  memset(&wasm_result, 0, sizeof(wasm_result));
+  pynter_fault_t fault = pynter_run(code, code_size, &wasm_result);
 
   if (fault) {
     printf("Program exited unsuccessfully: %s\n",
       fault >= (sizeof(fault_names)/sizeof(fault_names[0])) ? "(unknown fault)" : fault_names[fault]);
-    return;
+    memset(&wasm_result, 0, sizeof(wasm_result));
+    return &wasm_result;
   }
 
   printf("Program exited with result type %s: ",
-    result.type >= (sizeof(type_names)/sizeof(type_names[0])) ? "(unknown type)" : type_names[result.type]);
+    wasm_result.type >= (sizeof(type_names)/sizeof(type_names[0])) ? "(unknown type)" : type_names[wasm_result.type]);
 
-  switch (result.type) {
+  switch (wasm_result.type) {
   case pynter_type_undefined:
     printf("undefined");
     break;
@@ -117,20 +128,20 @@ void siwasm_run(unsigned char *code, size_t code_size) {
     sidisplay_nanbox(NANBOX_OFNULL(), false);
     break;
   case pynter_type_boolean:
-    sidisplay_nanbox(NANBOX_OFBOOL(result.boolean_value), false);
+    sidisplay_nanbox(NANBOX_OFBOOL(wasm_result.boolean_value), false);
     break;
   case pynter_type_integer:
-    printf("%d", result.integer_value);
+    printf("%d", wasm_result.integer_value);
     break;
   case pynter_type_float:
-    printf("%f", result.float_value);
+    printf("%f", wasm_result.float_value);
     break;
   case pynter_type_string:
-    printf("%s", result.string_value);
+    printf("%s", wasm_result.string_value);
     break;
   case pynter_type_array:
   case pynter_type_function:
-    display_object_result(&result, false);
+    display_object_result(&wasm_result, false);
     break;
   default:
     printf("(unable to print value)");
@@ -138,4 +149,6 @@ void siwasm_run(unsigned char *code, size_t code_size) {
   }
 
   printf("\n");
+
+  return &wasm_result;
 }
