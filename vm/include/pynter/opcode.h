@@ -97,9 +97,10 @@ typedef enum __attribute__((__packed__)) {
   op_neq_f    = 0x53,
   op_neq_b    = 0x54,
   op_eq_p     = 0x55,
-  op_neq_p    = 0x56
-  // 0x57-0x5A reserved: py-slang PVML extensions with no Pynter opcode yet
-  // (floordiv.g/floordiv.f/newiter/for.iter — see py-slang's opcodes.ts).
+  op_neq_p    = 0x56,
+  // 0x57-0x58 still reserved: floordiv.g/floordiv.f have no Pynter opcode yet.
+  op_new_iter = 0x59,
+  op_for_iter = 0x5A
 } pynter_opcode_t;
 _Static_assert(sizeof(pynter_opcode_t) == 1, "enum pynter_opcode has wrong size");
 

@@ -70,6 +70,7 @@ PYNTER_INLINEIFC __attribute__((warn_unused_result)) sinanbox_t siexec_nanbox(si
     case sitype_string:
     case sitype_array:
     case sitype_array_data:
+    case sitype_iterator:
     case sitype_free:
     default:
       sifault(pynter_fault_type);

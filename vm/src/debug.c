@@ -131,13 +131,16 @@ const char *get_opcode_name(opcode_t op) {
     "neq_f",
     "neq_b",
     "eq_p",
-    "neq_p"
-    // 0x57-0x5A (floordiv.g/floordiv.f/newiter/for.iter) are py-slang PVML
-    // extensions with no Pynter opcode yet, so op_neq_p is the array's last
-    // entry; the bounds check below rejects anything past it before indexing.
+    "neq_p",
+    // 0x57-0x58 (floordiv.g/floordiv.f) are still py-slang PVML extensions
+    // with no Pynter opcode yet — the array skips straight from neq_p to
+    // new_iter/for_iter, so the bounds check below can't just compare against
+    // op_for_iter; it explicitly excludes the still-unimplemented gap too.
+    [op_new_iter] = "new_iter",
+    [op_for_iter] = "for_iter",
   };
 
-  if (op > op_neq_p) {
+  if (op > op_for_iter || (op > op_neq_p && op < op_new_iter)) {
     return "invalid_opcode";
   } else {
     return opcode_names[op];
@@ -188,6 +191,11 @@ void debug_heap_obj(const siheap_header_t *o) {
   case sitype_intcont: {
     const siheap_intcont_t *c = (const siheap_intcont_t *) o;
     SIDEBUG("function (internal continuation); argc %d", c->argc);
+    break;
+  }
+  case sitype_iterator: {
+    const siheap_iterator_t *it = (const siheap_iterator_t *) o;
+    SIDEBUG("range iterator; current %d, stop %d, step %d", it->current, it->stop, it->step);
     break;
   }
   case sitype_array_data:

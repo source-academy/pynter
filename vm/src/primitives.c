@@ -31,16 +31,22 @@ static void debug_display_argv(unsigned int argc, sinanbox_t *argv) {
 }
 
 static void handle_display(unsigned int argc, sinanbox_t *argv, bool is_error) {
-  if (argc < 1) {
-    return;
+  // Python's print(*args): every argument in order, space-separated,
+  // followed by a newline (pynter_printer_flush below) — including the
+  // zero-argument case, which still prints a bare blank line. This
+  // replaces Source's original display(value, label) convention this
+  // function historically implemented (a single optional label argument,
+  // printed *before* the value, capped at 2 arguments total): py-slang
+  // exposes only "print", with "display" as a bare alias sharing the same
+  // primitive index (see PRIMITIVE_FUNCTIONS in builtins.ts) — there is no
+  // py-slang-visible label-argument convention to preserve, and Python's
+  // print() takes any number of positional arguments, not just up to 2.
+  for (unsigned int i = 0; i < argc; ++i) {
+    if (i > 0) {
+      SIVMFN_PRINT(" ", is_error);
+    }
+    sidisplay_nanbox(argv[i], is_error);
   }
-
-  if (argc > 1) {
-    sidisplay_nanbox(argv[1], is_error);
-    SIVMFN_PRINT(" ", is_error);
-  }
-
-  sidisplay_nanbox(argv[0], is_error);
 
   if (pynter_printer_flush) {
     pynter_printer_flush(is_error);
@@ -1612,6 +1618,60 @@ static sinanbox_t sivmfn_prim_is_stream(uint8_t argc, sinanbox_t *argv) {
 }
 
 /******************************************************************************
+ * Iterator primitives
+ ******************************************************************************/
+
+/**
+ * range(stop) / range(start, stop) / range(start, stop, step) — the only
+ * iterable py-slang's `for` loop grammar ever compiles at this VM's target
+ * chapter (§3's ForRangeOnlyValidator), so this is also the only producer
+ * op_new_iter/op_for_iter ever need to handle (see their own doc comments in
+ * vm.c). Mirrors py-slang's own range() primitive contract exactly (see
+ * builtins.ts case 30), including the arg-count range and the step == 0
+ * rejection.
+ */
+static sinanbox_t sivmfn_prim_range(uint8_t argc, sinanbox_t *argv) {
+  if (argc < 1 || argc > 3) {
+    sifault(pynter_fault_function_arity);
+    return NANBOX_OFEMPTY();
+  }
+  // NANBOX_ISNUMERIC + NANBOX_TOI32, not NANBOX_ISINT + NANBOX_INT: integers
+  // outside the 21-bit small-int range are represented as floats in this
+  // VM, so NANBOX_ISINT alone would wrongly reject an ordinary call like
+  // range(2000000) with a type error. Matches how sivmfn_prim_gen_list/
+  // sivmfn_prim_list_ref already accept either representation.
+  for (uint8_t i = 0; i < argc; ++i) {
+    if (!NANBOX_ISNUMERIC(argv[i])) {
+      sifault(pynter_fault_type);
+      return NANBOX_OFEMPTY();
+    }
+  }
+
+  int32_t start, stop, step;
+  if (argc == 1) {
+    start = 0;
+    stop = NANBOX_TOI32(argv[0]);
+    step = 1;
+  } else if (argc == 2) {
+    start = NANBOX_TOI32(argv[0]);
+    stop = NANBOX_TOI32(argv[1]);
+    step = 1;
+  } else {
+    start = NANBOX_TOI32(argv[0]);
+    stop = NANBOX_TOI32(argv[1]);
+    step = NANBOX_TOI32(argv[2]);
+  }
+
+  if (step == 0) {
+    sifault(pynter_fault_divide_by_zero);
+    return NANBOX_OFEMPTY();
+  }
+
+  siheap_iterator_t *iter = siiterator_new(start, stop, step);
+  return SIHEAP_PTRTONANBOX(iter);
+}
+
+/******************************************************************************
  * Miscellaneous primitives
  ******************************************************************************/
 
@@ -1775,5 +1835,31 @@ sivmfnptr_t sivmfn_primitives[] = {
   sivmfn_prim_is_float,
   sivmfn_prim_is_complex,
   sivmfn_prim_gen_list,
-  sivmfn_prim_arity
+  sivmfn_prim_arity, // 96
+  // 97-130: py-slang's PRIMITIVE_FUNCTIONS (builtins.ts) already assigns
+  // these indices to real/imag/complex/parse/tokenize/
+  // apply_in_underlying_python/various math_* functions/print_llist/input —
+  // none implemented natively (browser/CSE-only, or, for print_llist,
+  // simply not yet ported). py-slang's index for a name has never had to
+  // match this array's length at the time the name was assigned (a
+  // longstanding, known mismatch between the two projects' index tables —
+  // see py-slang's README), so range() landing right after arity() at 97
+  // would silently collide with "real" instead. Every index up to range()'s
+  // real slot at 131 must stay an explicit, valid function pointer — the
+  // same clean-faulting stub already used for actually-unimplemented-but-
+  // Source-native primitives above (sivmfn_prim_unimpl) — rather than an
+  // implicit zero-initialized gap, which would turn any of these (e.g.
+  // print_llist, already exercised by py-slang's own native-Pynter test
+  // suite and expected to fault cleanly) into a NULL function pointer call
+  // instead of a controlled sifault().
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 97-100
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 101-104
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 105-108
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 109-112
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 113-116
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 117-120
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 121-124
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 125-128
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 129-130
+  sivmfn_prim_range // 131
 };

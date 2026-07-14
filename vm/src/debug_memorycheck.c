@@ -54,6 +54,7 @@ static void debug_memorycheck_walk_check_nanboxes(sinanbox_t *arr, const size_t 
       case sitype_strconst:
       case sitype_strpair:
       case sitype_intcont:
+      case sitype_iterator:
         break;
       case sitype_frame:
         // the stack has nanboxes referring to frames (fn return information)
@@ -103,6 +104,15 @@ static void debug_memorycheck_walk_do_object_2(const siheap_header_t *obj) {
 
     // increase refcount of data referents
     debug_memorycheck_walk_check_nanboxes(c->argv, c->argc, false);
+    break;
+  }
+
+  case sitype_iterator: {
+    siheap_iterator_t *c = (siheap_iterator_t *) obj;
+
+    // range()'s own step == 0 check should make this unreachable
+    assert(c->step != 0);
+    // no owned heap references to trace (range-only, no backing array)
     break;
   }
 
@@ -362,6 +372,7 @@ static void debug_memorycheck_search_do_object(const siheap_header_t *needle, co
   case sitype_free:
   case sitype_strconst:
   case sitype_string:
+  case sitype_iterator:
   default:
     break;
   }
