@@ -132,15 +132,18 @@ const char *get_opcode_name(opcode_t op) {
     "neq_b",
     "eq_p",
     "neq_p",
-    // 0x57-0x58 (floordiv.g/floordiv.f) are still py-slang PVML extensions
-    // with no Pynter opcode yet — the array skips straight from neq_p to
-    // new_iter/for_iter, so the bounds check below can't just compare against
-    // op_for_iter; it explicitly excludes the still-unimplemented gap too.
-    [op_new_iter] = "new_iter",
-    [op_for_iter] = "for_iter",
+    "floordiv_g",
+    "floordiv_f",
+    "new_iter",
+    "for_iter",
+    // 0x5B-0x64 intentionally absent (see opcode.h) — designated initializer
+    // below leaves those slots NULL, checked for explicitly, rather than
+    // extending the dense range check that used to suffice before op_pow_g
+    // introduced a real gap in the middle of the byte space.
+    [op_pow_g] = "pow_g",
   };
 
-  if (op > op_for_iter || (op > op_neq_p && op < op_new_iter)) {
+  if (op >= sizeof(opcode_names) / sizeof(opcode_names[0]) || opcode_names[op] == NULL) {
     return "invalid_opcode";
   } else {
     return opcode_names[op];
