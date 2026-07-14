@@ -1625,8 +1625,13 @@ static sinanbox_t sivmfn_prim_range(uint8_t argc, sinanbox_t *argv) {
     sifault(pynter_fault_function_arity);
     return NANBOX_OFEMPTY();
   }
+  // NANBOX_ISNUMERIC + NANBOX_TOI32, not NANBOX_ISINT + NANBOX_INT: integers
+  // outside the 21-bit small-int range are represented as floats in this
+  // VM, so NANBOX_ISINT alone would wrongly reject an ordinary call like
+  // range(2000000) with a type error. Matches how sivmfn_prim_gen_list/
+  // sivmfn_prim_list_ref already accept either representation.
   for (uint8_t i = 0; i < argc; ++i) {
-    if (!NANBOX_ISINT(argv[i])) {
+    if (!NANBOX_ISNUMERIC(argv[i])) {
       sifault(pynter_fault_type);
       return NANBOX_OFEMPTY();
     }
@@ -1635,16 +1640,16 @@ static sinanbox_t sivmfn_prim_range(uint8_t argc, sinanbox_t *argv) {
   int32_t start, stop, step;
   if (argc == 1) {
     start = 0;
-    stop = NANBOX_INT(argv[0]);
+    stop = NANBOX_TOI32(argv[0]);
     step = 1;
   } else if (argc == 2) {
-    start = NANBOX_INT(argv[0]);
-    stop = NANBOX_INT(argv[1]);
+    start = NANBOX_TOI32(argv[0]);
+    stop = NANBOX_TOI32(argv[1]);
     step = 1;
   } else {
-    start = NANBOX_INT(argv[0]);
-    stop = NANBOX_INT(argv[1]);
-    step = NANBOX_INT(argv[2]);
+    start = NANBOX_TOI32(argv[0]);
+    stop = NANBOX_TOI32(argv[1]);
+    step = NANBOX_TOI32(argv[2]);
   }
 
   if (step == 0) {
