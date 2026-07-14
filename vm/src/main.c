@@ -73,6 +73,7 @@ static void set_result(sinanbox_t exec_result, pynter_value_t *result) {
     case sitype_frame:
     case sitype_free:
     case sitype_env:
+    case sitype_iterator:
     default:
       SIBUGV("Unexpected return object type %d\n", obj->type);
       break;

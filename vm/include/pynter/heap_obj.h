@@ -137,6 +137,39 @@ PYNTER_INLINE void sifunction_destroy(siheap_function_t *fn) {
   }
 }
 
+/**
+ * A `range(start, stop, step)` iterator's state — op_new_iter/op_for_iter's
+ * only iterable (Python's own `for` loop grammar at this VM's target chapter
+ * is validated range()-only upstream in py-slang, so no other iterable shape
+ * ever reaches this VM). `current`/`stop`/`step` are plain C ints, not
+ * nanboxes: the values *produced* per iteration go through NANBOX_WRAP_INT
+ * (falling back to float once out of the 21-bit small-int range), but the
+ * iterator's own bookkeeping needs full int32 range to match range()'s own
+ * argument range, matching py-slang's PVMLIterator's `current`/`stop`/`step`
+ * fields (see src/engines/pvml/types.ts and pvml-interpreter.ts's FOR_ITER
+ * case) exactly, just without an array-iteration variant.
+ */
+typedef struct {
+  siheap_header_t header;
+  int32_t current;
+  int32_t stop;
+  int32_t step;
+} siheap_iterator_t;
+
+PYNTER_INLINE siheap_iterator_t *siiterator_new(int32_t start, int32_t stop, int32_t step) {
+  siheap_iterator_t *iter = (siheap_iterator_t *) siheap_malloc(sizeof(siheap_iterator_t), sitype_iterator);
+  iter->current = start;
+  iter->stop = stop;
+  iter->step = step;
+
+  return iter;
+}
+
+/** No owned heap references (range-only, no backing array) — nothing to release. */
+PYNTER_INLINE void siiterator_destroy(siheap_iterator_t *iter) {
+  (void) iter;
+}
+
 typedef struct {
   siheap_header_t header;
   const opcode_t *return_address;
@@ -242,6 +275,7 @@ PYNTER_INLINEIFC const char *sistrobj_tocharptr(siheap_header_t *obj) {
   case sitype_frame:
   case sitype_env:
   case sitype_intcont:
+  case sitype_iterator:
   default:
     SIBUGM("Unknown string type\n");
     sifault(pynter_fault_internal_error);
@@ -267,6 +301,7 @@ PYNTER_INLINE _Bool siheap_is_string(siheap_header_t *h) {
   case sitype_frame:
   case sitype_env:
   case sitype_intcont:
+  case sitype_iterator:
   default:
     return false;
   }

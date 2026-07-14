@@ -47,6 +47,7 @@ PYNTER_INLINEIFC void sidisplay_strobj(siheap_header_t *obj, _Bool is_error) {
   case sitype_env:
   case sitype_array:
   case sitype_function:
+  case sitype_iterator:
     break;
   }
 }
@@ -108,6 +109,9 @@ PYNTER_INLINEIFC void sidisplay_nanbox(sinanbox_t v, bool is_error) {
         break;
       case sitype_function:
         SIVMFN_PRINT("<function>", is_error);
+        break;
+      case sitype_iterator:
+        SIVMFN_PRINT("<range_iterator>", is_error);
         break;
       case sitype_array_data:
       case sitype_empty:
