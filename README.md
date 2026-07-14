@@ -1,6 +1,7 @@
 # Pynter
 
 [![Coverage Status](https://coveralls.io/repos/github/source-academy/pynter/badge.svg?branch=master)](https://coveralls.io/github/source-academy/pynter?branch=master)
+[![npm](https://img.shields.io/npm/v/@sourceacademy/pynter-wasm.svg)](https://www.npmjs.com/package/@sourceacademy/pynter-wasm)
 
 **Target: Python (SICPy) Chapter 3.** Pynter's goal is a native VM that correctly runs everything
 py-slang's PVML compiler produces for Python §3 — not later chapters, and not the general
@@ -88,8 +89,9 @@ Alternatively, you could also try the [web demo](https://source-academy.github.i
 
 The same WASM build that powers the web demo is published as
 [`@sourceacademy/pynter-wasm`](https://www.npmjs.com/package/@sourceacademy/pynter-wasm) — a
-consumer (e.g. [py-slang](https://github.com/source-academy/py-slang)) can `npm install` it
-instead of building Emscripten output locally and vendoring the artifacts by hand.
+consumer (e.g. [py-slang](https://github.com/source-academy/py-slang), which depends on it directly
+rather than vendoring a manually-copied build) can `npm install` it instead of building Emscripten
+output locally by hand.
 
 ```
 npm install @sourceacademy/pynter-wasm
@@ -107,7 +109,10 @@ always matches the release tag. This is deliberate, not an oversight: a release 
 human-decided step, matching this repo's own versioning philosophy for the native `runner` binary,
 and py-slang's own pinned-commit (never floating) policy for consuming Pynter in the first place.
 To publish a new version, cut a GitHub Release with the desired tag (e.g. `v0.3.0`) — the workflow
-builds, packages, and publishes automatically from there.
+builds, packages, and publishes automatically from there, authenticating to npm via a repo-level
+`NPM_TOKEN` secret (an automation/granular-access token with the 2FA-bypass option enabled, scoped
+to this package — required since the publish step runs unattended in CI with no human present to
+supply a one-time code).
 
 For convenience, we have included a NPM package that exposes the CLI utility.
 
