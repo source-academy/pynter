@@ -107,7 +107,9 @@ always matches the release tag. This is deliberate, not an oversight: a release 
 human-decided step, matching this repo's own versioning philosophy for the native `runner` binary,
 and py-slang's own pinned-commit (never floating) policy for consuming Pynter in the first place.
 To publish a new version, cut a GitHub Release with the desired tag (e.g. `v0.3.0`) — the workflow
-builds, packages, and publishes automatically from there.
+builds, packages, and publishes automatically from there. Publishing itself uses npm's Trusted
+Publishing (OIDC): no npm token is stored in this repo — the package on npmjs.com must have a
+trusted publisher configured pointing at this repo and this workflow file.
 
 For convenience, we have included a NPM package that exposes the CLI utility.
 
