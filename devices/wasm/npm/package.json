@@ -1,0 +1,32 @@
+{
+  "name": "@sourceacademy/pynter-wasm",
+  "version": "0.0.0",
+  "description": "WebAssembly build of the Pynter VM (Python bytecode interpreter for Source Academy's SICPy)",
+  "main": "pynterwasm.js",
+  "types": "pynterwasm.d.ts",
+  "files": [
+    "pynterwasm.js",
+    "pynterwasm.wasm",
+    "pynterwasm.d.ts"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/source-academy/pynter.git",
+    "directory": "devices/wasm/npm"
+  },
+  "homepage": "https://github.com/source-academy/pynter/tree/master/devices/wasm",
+  "bugs": {
+    "url": "https://github.com/source-academy/pynter/issues"
+  },
+  "license": "Apache-2.0",
+  "keywords": [
+    "sicp",
+    "cs1101s",
+    "source-academy",
+    "webassembly",
+    "wasm"
+  ]
+}

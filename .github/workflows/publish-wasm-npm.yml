@@ -1,0 +1,60 @@
+name: Publish pynter-wasm to npm
+
+# Publishes the WASM build of Pynter (@sourceacademy/pynter-wasm) to npm.
+#
+# Deliberately release-gated, not push-to-master-gated: a GitHub Release is a
+# reviewed, human-decided step (matching this repo's own versioning
+# philosophy for the native `runner`, and py-slang's pinned-commit-not-float
+# policy for consuming Pynter). Auto-publishing on every push to master would
+# mean every merged PR silently ships a new npm version with no version bump
+# to review.
+#
+# The published package version always matches the release tag (e.g. tag
+# v0.3.0 -> npm version 0.3.0) — one clear, auditable source of truth, not a
+# separately-maintained package.json version or an auto-incrementing counter.
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: "https://registry.npmjs.org"
+
+      - uses: mymindstorm/setup-emsdk@v14
+
+      - name: Build WASM module
+        working-directory: devices/wasm
+        run: |
+          mkdir -p build
+          cd build
+          emcmake cmake ../wasm
+          make -j$(nproc)
+
+      - name: Assemble npm package
+        run: |
+          mkdir -p dist-npm
+          cp devices/wasm/build/pynterwasm.js dist-npm/
+          cp devices/wasm/build/pynterwasm.wasm dist-npm/
+          cp devices/wasm/build/pynterwasm.d.ts dist-npm/
+          cp devices/wasm/npm/package.json dist-npm/
+          cp devices/wasm/npm/README.md dist-npm/
+
+      - name: Set package version from release tag
+        working-directory: dist-npm
+        run: npm version --no-git-tag-version --allow-same-version "${GITHUB_REF_NAME#v}"
+
+      - name: Publish to npm
+        working-directory: dist-npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
