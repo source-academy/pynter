@@ -440,7 +440,16 @@ static void main_loop(void) {
         siheap_array_t *src = (siheap_array_t *) SIHEAP_NANBOXTOPTR(v0_is_array ? v0 : v1);
         int32_t n = NANBOX_INT(v0_is_array ? v1 : v0);
         address_t srclen = src->count;
-        address_t newlen = n > 0 ? (address_t) n * srclen : 0;
+        // n and srclen are each individually bounded by NANBOX_INTMAX, but
+        // their product isn't -- computed in uint64_t first so an
+        // unreasonably large repeat count/list can't silently wrap the
+        // 32-bit address_t result into a too-small allocation.
+        uint64_t newlen64 = n > 0 ? (uint64_t) n * srclen : 0;
+        if (newlen64 > UINT32_MAX) {
+          sifault(pynter_fault_out_of_memory);
+          return;
+        }
+        address_t newlen = (address_t) newlen64;
 
         siheap_array_t *result = siarray_new(newlen);
         result->count = newlen;

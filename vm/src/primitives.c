@@ -263,18 +263,24 @@ static sinanbox_t sivmfn_prim_math_log(uint8_t argc, sinanbox_t *argv) {
   return NANBOX_OFFLOAT(logf(x) / logf(base));
 }
 
+// M_PI isn't standard C (only conditionally exposed by <math.h> depending on
+// feature-test macros -- present on macOS unconditionally, but undeclared
+// under CI's stricter Linux/Emscripten builds), so it's spelled out here
+// instead of relied on.
+#define PYNTER_PI 3.14159265358979323846f
+
 // math.degrees(x)/math.radians(x): simple linear conversions, no native
 // counterpart until now (see builtins.ts's PRIMITIVE_FUNCTIONS comment).
 static sinanbox_t sivmfn_prim_math_degrees(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
   float x = NANBOX_TOFLOAT(*argv);
-  return NANBOX_OFFLOAT(x * 180.0f / (float) M_PI);
+  return NANBOX_OFFLOAT(x * 180.0f / PYNTER_PI);
 }
 
 static sinanbox_t sivmfn_prim_math_radians(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
   float x = NANBOX_TOFLOAT(*argv);
-  return NANBOX_OFFLOAT(x * (float) M_PI / 180.0f);
+  return NANBOX_OFFLOAT(x * PYNTER_PI / 180.0f);
 }
 
 static sinanbox_t sivmfn_prim_math_erf(uint8_t argc, sinanbox_t *argv) {
@@ -369,9 +375,17 @@ static sinanbox_t sivmfn_prim_math_lgamma(uint8_t argc, sinanbox_t *argv) {
 
 // gcd/lcm/comb/factorial/isqrt/perm operate on Python `int`s specifically —
 // unlike the float-domain math_* functions above, a float (or bool) argument
-// here is a TypeError in real Python (math.gcd(3.0, 6) raises), so these
-// reject via NANBOX_ISINT explicitly rather than NANBOX_TOFLOAT/TOI32's
-// float-coercing conversion.
+// here is a TypeError in real Python (math.gcd(3.0, 6) raises even though
+// 3.0 is whole-valued), so these reject via NANBOX_ISINT explicitly rather
+// than NANBOX_TOFLOAT/TOI32's float-coercing conversion. This deliberately
+// does *not* special-case a whole-valued float (e.g. accepting 3.0 because
+// truncf(3.0f) == 3.0f) purely because a genuine Python int outside this
+// VM's 21-bit small-int range would otherwise also be represented as a
+// float internally (see NANBOX_WRAP_INT) and get wrongly let through:
+// py-slang's own CSE reference (math.ts) rejects every float argument here
+// unconditionally, and matching that takes priority over handling ints past
+// pynter's native range, which none of the current test cases exercise
+// anyway.
 static int32_t pynter_gcd_i32(int32_t a, int32_t b) {
   if (a < 0) a = -a;
   if (b < 0) b = -b;
@@ -391,11 +405,20 @@ static sinanbox_t sivmfn_prim_math_gcd(uint8_t argc, sinanbox_t *argv) {
     }
     result = pynter_gcd_i32(result, NANBOX_TOI32(argv[i]));
   }
-  return NANBOX_OFINT(result);
+  // gcd's result is bounded by the smallest input's magnitude, which is
+  // itself already a valid small int (NANBOX_ISINT-checked above) -- never
+  // out of NANBOX_WRAP_INT's range, but using it anyway for consistency
+  // with lcm/comb/factorial/isqrt/perm below, all of which can genuinely
+  // overflow it.
+  return NANBOX_WRAP_INT(result);
 }
 
 static sinanbox_t sivmfn_prim_math_lcm(uint8_t argc, sinanbox_t *argv) {
-  int32_t result = 1;
+  // int64_t intermediate: unlike gcd, lcm(a, b) can be as large as a*b,
+  // which can overflow int32_t during the multiply even when the final
+  // result (after dividing by gcd) would fit -- and can also legitimately
+  // exceed NANBOX_INTMAX for larger inputs, unlike gcd.
+  int64_t result = 1;
   for (uint8_t i = 0; i < argc; ++i) {
     if (!NANBOX_ISINT(argv[i])) {
       sifault(pynter_fault_type);
@@ -406,10 +429,10 @@ static sinanbox_t sivmfn_prim_math_lcm(uint8_t argc, sinanbox_t *argv) {
       result = 0;
       continue;
     }
-    int32_t g = pynter_gcd_i32(result, v);
+    int32_t g = pynter_gcd_i32((int32_t) result, v);
     result = (result / g) * v;
   }
-  return NANBOX_OFINT(result);
+  return NANBOX_WRAP_INT(result);
 }
 
 static sinanbox_t sivmfn_prim_math_comb(uint8_t argc, sinanbox_t *argv) {
@@ -428,11 +451,14 @@ static sinanbox_t sivmfn_prim_math_comb(uint8_t argc, sinanbox_t *argv) {
   if (k > n - k) {
     k = n - k;
   }
-  int32_t result = 1;
+  // int64_t intermediate: the running product (before dividing by i+1 each
+  // step) can exceed int32_t range well before the final binomial
+  // coefficient does.
+  int64_t result = 1;
   for (int32_t i = 0; i < k; ++i) {
     result = result * (n - i) / (i + 1);
   }
-  return NANBOX_OFINT(result);
+  return NANBOX_WRAP_INT(result);
 }
 
 static sinanbox_t sivmfn_prim_math_factorial(uint8_t argc, sinanbox_t *argv) {
@@ -444,11 +470,19 @@ static sinanbox_t sivmfn_prim_math_factorial(uint8_t argc, sinanbox_t *argv) {
   if (n < 0) {
     sifault(pynter_fault_value_error);
   }
-  int32_t result = 1;
+  // double intermediate: factorial grows past int32_t range at n=13 and
+  // past NANBOX_INTMAX (2^20-1) even sooner (n=9) -- a double keeps this
+  // exact up to n=18 or so (2^53 mantissa) and an approximate float32
+  // result (via NANBOX_OFFLOAT's fallback below) beyond that, matching how
+  // this VM already approximates any Python int past its native range.
+  double result = 1.0;
   for (int32_t i = 2; i <= n; ++i) {
     result *= i;
   }
-  return NANBOX_OFINT(result);
+  if (result >= NANBOX_INTMIN && result <= NANBOX_INTMAX) {
+    return NANBOX_OFINT((int32_t) result);
+  }
+  return NANBOX_OFFLOAT((float) result);
 }
 
 static sinanbox_t sivmfn_prim_math_isqrt(uint8_t argc, sinanbox_t *argv) {
@@ -461,7 +495,7 @@ static sinanbox_t sivmfn_prim_math_isqrt(uint8_t argc, sinanbox_t *argv) {
     sifault(pynter_fault_value_error);
   }
   if (n < 2) {
-    return NANBOX_OFINT(n);
+    return NANBOX_WRAP_INT(n);
   }
   int32_t low = 1, high = n;
   while (low < high) {
@@ -473,7 +507,10 @@ static sinanbox_t sivmfn_prim_math_isqrt(uint8_t argc, sinanbox_t *argv) {
       high = mid - 1;
     }
   }
-  return NANBOX_OFINT(low);
+  // isqrt(n) <= n, and n is already a valid small int (NANBOX_ISINT-checked
+  // above), so this can never actually exceed NANBOX_WRAP_INT's range --
+  // used anyway for consistency, same as gcd above.
+  return NANBOX_WRAP_INT(low);
 }
 
 static sinanbox_t sivmfn_prim_math_perm(uint8_t argc, sinanbox_t *argv) {
@@ -497,11 +534,15 @@ static sinanbox_t sivmfn_prim_math_perm(uint8_t argc, sinanbox_t *argv) {
   if (k > n) {
     return NANBOX_OFINT(0);
   }
-  int32_t result = 1;
+  // double intermediate, same reasoning as factorial above.
+  double result = 1.0;
   for (int32_t i = 0; i < k; ++i) {
     result *= (n - i);
   }
-  return NANBOX_OFINT(result);
+  if (result >= NANBOX_INTMIN && result <= NANBOX_INTMAX) {
+    return NANBOX_OFINT((int32_t) result);
+  }
+  return NANBOX_OFFLOAT((float) result);
 }
 
 static sinanbox_t sivmfn_prim_math_hypot(uint8_t argc, sinanbox_t *argv) {
