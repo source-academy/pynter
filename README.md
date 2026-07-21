@@ -56,8 +56,8 @@ shallow-copy semantics for nested lists) are implemented natively and verified a
 py-slang's own multi-engine test suite (`yarn pynter:report` in the
 [py-slang](https://github.com/source-academy/py-slang) repo, with `PYNTER_RUNNER_PATH` pointed at a
 local build of this project) — py-slang's test suite doubles as this project's own de-facto
-functional test framework; see that repo's `src/tests/utils.ts` for how tests here are generated and
-gated. Domain-restricted math functions (`acos`, `acosh`, `asin`, `atanh`, `log`, `log1p`, `log2`,
+functional test framework; see that repo's `src/tests/utils.ts` for how tests here are generated.
+Domain-restricted math functions (`acos`, `acosh`, `asin`, `atanh`, `log`, `log1p`, `log2`,
 `log10`, `sqrt`) raise a fault (`pynter_fault_value_error`, Python's `ValueError`) on out-of-domain
 input, matching CPython, rather than silently returning NaN.
 
