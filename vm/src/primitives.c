@@ -201,28 +201,308 @@ static sinanbox_t sivmfn_prim_gen_list(uint8_t argc, sinanbox_t *argv) {
   return NANBOX_OFFLOAT(name ## f(NANBOX_TOFLOAT(argv[0]), NANBOX_TOFLOAT(argv[1]))); \
 }
 
-MATH_FN(acos)
-MATH_FN(acosh)
-MATH_FN(asin)
+// Like MATH_FN, but for functions with a restricted domain (matching
+// CPython's own per-function ValueError checks, e.g. math.sqrt(-1),
+// math.acos(2)) — `domain_reject_expr` is a boolean C "is this out of
+// domain" expression over the local `float x`, checked before calling the
+// underlying libm function; true raises pynter_fault_value_error instead of
+// silently propagating libm's own NaN result (e.g. sqrtf(-1) == NaN), which
+// real Python raises ValueError for instead of returning nan. Must be
+// phrased as a reject (not an accept) condition: comparisons against NaN are
+// always false in C, so a reject-style check (`x < 0.0f`) is false for NaN
+// (correctly falling through to e.g. sqrtf(nan) == nan, matching CPython's
+// math.sqrt(nan) == nan), whereas its logical negation as an accept-style
+// check (`!(x >= 0.0f)`) would be true for NaN and wrongly raise instead.
+#define MATH_FN_DOMAIN(name, domain_reject_expr) static sinanbox_t sivmfn_prim_math_ ## name(uint8_t argc, sinanbox_t *argv) { \
+  CHECK_ARGC(1); \
+  float x = NANBOX_TOFLOAT(*argv); \
+  if (domain_reject_expr) { \
+    sifault(pynter_fault_value_error); \
+  } \
+  return NANBOX_OFFLOAT(name ## f(x)); \
+}
+
+MATH_FN_DOMAIN(acos, x < -1.0f || x > 1.0f)
+MATH_FN_DOMAIN(acosh, x < 1.0f)
+MATH_FN_DOMAIN(asin, x < -1.0f || x > 1.0f)
 MATH_FN(asinh)
 MATH_FN(atan)
-MATH_FN(atanh)
+MATH_FN_DOMAIN(atanh, x <= -1.0f || x >= 1.0f)
 MATH_FN(cbrt)
 MATH_FN(cos)
 MATH_FN(cosh)
 MATH_FN(exp)
 MATH_FN(expm1)
-MATH_FN(log)
-MATH_FN(log1p)
-MATH_FN(log2)
-MATH_FN(log10)
+MATH_FN_DOMAIN(log1p, x <= -1.0f)
+MATH_FN_DOMAIN(log2, x <= 0.0f)
+MATH_FN_DOMAIN(log10, x <= 0.0f)
 MATH_FN(sin)
 MATH_FN(sinh)
-MATH_FN(sqrt)
+MATH_FN_DOMAIN(sqrt, x < 0.0f)
 MATH_FN(tan)
 MATH_FN(tanh)
 MATH_FN_2(atan2)
 MATH_FN_2(pow)
+
+// math.log(x) / math.log(x, base) — the only math_* function with an
+// optional second argument among the ones pynter implements natively (see
+// math.ts's @Validate(1, 2, "math_log", true)), so it can't use MATH_FN.
+static sinanbox_t sivmfn_prim_math_log(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  float x = NANBOX_TOFLOAT(argv[0]);
+  if (x <= 0.0f) {
+    sifault(pynter_fault_value_error);
+  }
+  if (argc == 1) {
+    return NANBOX_OFFLOAT(logf(x));
+  }
+  float base = NANBOX_TOFLOAT(argv[1]);
+  if (base <= 0.0f) {
+    sifault(pynter_fault_value_error);
+  }
+  return NANBOX_OFFLOAT(logf(x) / logf(base));
+}
+
+// math.degrees(x)/math.radians(x): simple linear conversions, no native
+// counterpart until now (see builtins.ts's PRIMITIVE_FUNCTIONS comment).
+static sinanbox_t sivmfn_prim_math_degrees(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  float x = NANBOX_TOFLOAT(*argv);
+  return NANBOX_OFFLOAT(x * 180.0f / (float) M_PI);
+}
+
+static sinanbox_t sivmfn_prim_math_radians(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  float x = NANBOX_TOFLOAT(*argv);
+  return NANBOX_OFFLOAT(x * (float) M_PI / 180.0f);
+}
+
+static sinanbox_t sivmfn_prim_math_erf(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFFLOAT(erff(NANBOX_TOFLOAT(*argv)));
+}
+
+static sinanbox_t sivmfn_prim_math_erfc(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFFLOAT(erfcf(NANBOX_TOFLOAT(*argv)));
+}
+
+static sinanbox_t sivmfn_prim_math_fabs(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFFLOAT(fabsf(NANBOX_TOFLOAT(*argv)));
+}
+
+static sinanbox_t sivmfn_prim_math_fma(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(3);
+  float x = NANBOX_TOFLOAT(argv[0]);
+  float y = NANBOX_TOFLOAT(argv[1]);
+  float z = NANBOX_TOFLOAT(argv[2]);
+  return NANBOX_OFFLOAT(fmaf(x, y, z));
+}
+
+static sinanbox_t sivmfn_prim_math_fmod(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(2);
+  float x = NANBOX_TOFLOAT(argv[0]);
+  float y = NANBOX_TOFLOAT(argv[1]);
+  if (y == 0.0f) {
+    sifault(pynter_fault_value_error);
+  }
+  return NANBOX_OFFLOAT(fmodf(x, y));
+}
+
+static sinanbox_t sivmfn_prim_math_remainder(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(2);
+  float x = NANBOX_TOFLOAT(argv[0]);
+  float y = NANBOX_TOFLOAT(argv[1]);
+  if (y == 0.0f) {
+    sifault(pynter_fault_value_error);
+  }
+  return NANBOX_OFFLOAT(remainderf(x, y));
+}
+
+static sinanbox_t sivmfn_prim_math_copysign(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(2);
+  float x = NANBOX_TOFLOAT(argv[0]);
+  float y = NANBOX_TOFLOAT(argv[1]);
+  return NANBOX_OFFLOAT(copysignf(x, y));
+}
+
+static sinanbox_t sivmfn_prim_math_isfinite(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFBOOL(isfinite(NANBOX_TOFLOAT(*argv)));
+}
+
+static sinanbox_t sivmfn_prim_math_isinf(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFBOOL(isinf(NANBOX_TOFLOAT(*argv)));
+}
+
+static sinanbox_t sivmfn_prim_math_isnan(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFBOOL(isnan(NANBOX_TOFLOAT(*argv)));
+}
+
+static sinanbox_t sivmfn_prim_math_ldexp(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(2);
+  float x = NANBOX_TOFLOAT(argv[0]);
+  if (!NANBOX_ISINT(argv[1])) {
+    sifault(pynter_fault_type);
+  }
+  int32_t exponent = NANBOX_TOI32(argv[1]);
+  return NANBOX_OFFLOAT(ldexpf(x, exponent));
+}
+
+static sinanbox_t sivmfn_prim_math_exp2(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFFLOAT(exp2f(NANBOX_TOFLOAT(*argv)));
+}
+
+static sinanbox_t sivmfn_prim_math_gamma(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFFLOAT(tgammaf(NANBOX_TOFLOAT(*argv)));
+}
+
+static sinanbox_t sivmfn_prim_math_lgamma(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return NANBOX_OFFLOAT(lgammaf(NANBOX_TOFLOAT(*argv)));
+}
+
+// gcd/lcm/comb/factorial/isqrt/perm operate on Python `int`s specifically —
+// unlike the float-domain math_* functions above, a float (or bool) argument
+// here is a TypeError in real Python (math.gcd(3.0, 6) raises), so these
+// reject via NANBOX_ISINT explicitly rather than NANBOX_TOFLOAT/TOI32's
+// float-coercing conversion.
+static int32_t pynter_gcd_i32(int32_t a, int32_t b) {
+  if (a < 0) a = -a;
+  if (b < 0) b = -b;
+  while (b != 0) {
+    int32_t t = a % b;
+    a = b;
+    b = t;
+  }
+  return a;
+}
+
+static sinanbox_t sivmfn_prim_math_gcd(uint8_t argc, sinanbox_t *argv) {
+  int32_t result = 0;
+  for (uint8_t i = 0; i < argc; ++i) {
+    if (!NANBOX_ISINT(argv[i])) {
+      sifault(pynter_fault_type);
+    }
+    result = pynter_gcd_i32(result, NANBOX_TOI32(argv[i]));
+  }
+  return NANBOX_OFINT(result);
+}
+
+static sinanbox_t sivmfn_prim_math_lcm(uint8_t argc, sinanbox_t *argv) {
+  int32_t result = 1;
+  for (uint8_t i = 0; i < argc; ++i) {
+    if (!NANBOX_ISINT(argv[i])) {
+      sifault(pynter_fault_type);
+    }
+    int32_t v = NANBOX_TOI32(argv[i]);
+    if (v < 0) v = -v;
+    if (v == 0 || result == 0) {
+      result = 0;
+      continue;
+    }
+    int32_t g = pynter_gcd_i32(result, v);
+    result = (result / g) * v;
+  }
+  return NANBOX_OFINT(result);
+}
+
+static sinanbox_t sivmfn_prim_math_comb(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(2);
+  if (!NANBOX_ISINT(argv[0]) || !NANBOX_ISINT(argv[1])) {
+    sifault(pynter_fault_type);
+  }
+  int32_t n = NANBOX_TOI32(argv[0]);
+  int32_t k = NANBOX_TOI32(argv[1]);
+  if (n < 0 || k < 0) {
+    sifault(pynter_fault_value_error);
+  }
+  if (k > n) {
+    return NANBOX_OFINT(0);
+  }
+  if (k > n - k) {
+    k = n - k;
+  }
+  int32_t result = 1;
+  for (int32_t i = 0; i < k; ++i) {
+    result = result * (n - i) / (i + 1);
+  }
+  return NANBOX_OFINT(result);
+}
+
+static sinanbox_t sivmfn_prim_math_factorial(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  if (!NANBOX_ISINT(argv[0])) {
+    sifault(pynter_fault_type);
+  }
+  int32_t n = NANBOX_TOI32(argv[0]);
+  if (n < 0) {
+    sifault(pynter_fault_value_error);
+  }
+  int32_t result = 1;
+  for (int32_t i = 2; i <= n; ++i) {
+    result *= i;
+  }
+  return NANBOX_OFINT(result);
+}
+
+static sinanbox_t sivmfn_prim_math_isqrt(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  if (!NANBOX_ISINT(argv[0])) {
+    sifault(pynter_fault_type);
+  }
+  int32_t n = NANBOX_TOI32(argv[0]);
+  if (n < 0) {
+    sifault(pynter_fault_value_error);
+  }
+  if (n < 2) {
+    return NANBOX_OFINT(n);
+  }
+  int32_t low = 1, high = n;
+  while (low < high) {
+    int32_t mid = low + (high - low + 1) / 2;
+    int64_t sq = (int64_t) mid * (int64_t) mid;
+    if (sq <= n) {
+      low = mid;
+    } else {
+      high = mid - 1;
+    }
+  }
+  return NANBOX_OFINT(low);
+}
+
+static sinanbox_t sivmfn_prim_math_perm(uint8_t argc, sinanbox_t *argv) {
+  if (argc != 1 && argc != 2) {
+    sifault(pynter_fault_function_arity);
+  }
+  if (!NANBOX_ISINT(argv[0])) {
+    sifault(pynter_fault_type);
+  }
+  int32_t n = NANBOX_TOI32(argv[0]);
+  int32_t k = n;
+  if (argc == 2 && !NANBOX_ISNULL(argv[1])) {
+    if (!NANBOX_ISINT(argv[1])) {
+      sifault(pynter_fault_type);
+    }
+    k = NANBOX_TOI32(argv[1]);
+  }
+  if (n < 0 || k < 0) {
+    sifault(pynter_fault_value_error);
+  }
+  if (k > n) {
+    return NANBOX_OFINT(0);
+  }
+  int32_t result = 1;
+  for (int32_t i = 0; i < k; ++i) {
+    result *= (n - i);
+  }
+  return NANBOX_OFINT(result);
+}
 
 static sinanbox_t sivmfn_prim_math_hypot(uint8_t argc, sinanbox_t *argv) {
   // Adapted from https://github.com/v8/v8/blob/master/src/builtins/math.tq#L405
@@ -1852,14 +2132,25 @@ sivmfnptr_t sivmfn_primitives[] = {
   // print_llist, already exercised by py-slang's own native-Pynter test
   // suite and expected to fault cleanly) into a NULL function pointer call
   // instead of a controlled sifault().
+  // 97-103: real/imag/complex/_concat_arrays(compiler-internal)/parse/
+  // tokenize/apply_in_underlying_python — genuinely no native counterpart,
+  // browser/CSE-only (see builtins.ts's PRIMITIVE_FUNCTIONS comment).
   sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 97-100
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 101-104
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 105-108
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 109-112
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 113-116
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 117-120
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 121-124
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 125-128
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 129-130
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 101-103
+  // 104-125: the math_* functions below, now implemented natively (see
+  // MATH_FN_DOMAIN/gcd/lcm/comb/factorial/isqrt/perm above) — previously
+  // sivmfn_prim_unimpl stubs.
+  sivmfn_prim_math_degrees, sivmfn_prim_math_erf, sivmfn_prim_math_erfc, sivmfn_prim_math_comb, // 104-107
+  sivmfn_prim_math_factorial, sivmfn_prim_math_gcd, sivmfn_prim_math_isqrt, sivmfn_prim_math_lcm, // 108-111
+  sivmfn_prim_math_perm, sivmfn_prim_math_fabs, sivmfn_prim_math_fma, sivmfn_prim_math_fmod, // 112-115
+  sivmfn_prim_math_remainder, sivmfn_prim_math_copysign, sivmfn_prim_math_isfinite, sivmfn_prim_math_isinf, // 116-119
+  sivmfn_prim_math_isnan, sivmfn_prim_math_ldexp, sivmfn_prim_math_exp2, sivmfn_prim_math_gamma, // 120-123
+  sivmfn_prim_math_lgamma, sivmfn_prim_math_radians, // 124-125
+  // 126-130: time_time/print_llist/math_nextafter/math_ulp/input — genuinely
+  // unimplemented (no host clock/async stdin wiring, or, for print_llist,
+  // simply not yet ported; math_nextafter/math_ulp are unimplemented on the
+  // CSE side too, see math.ts).
+  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 126-129
+  sivmfn_prim_unimpl, // 130
   sivmfn_prim_range // 131
 };

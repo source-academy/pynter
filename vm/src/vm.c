@@ -103,6 +103,21 @@ bool sivm_equal(sinanbox_t l, sinanbox_t r) {
   }
 }
 
+// Python list subscript (read via LDAG, write via STAG) semantics — see
+// py-slang issue #299: index must be a genuine int (bool and float are both
+// TypeErrors, even though a bool is numerically an int and a whole-valued
+// float looks integral — matches docs/specs/python_typing_middle_34.tex and
+// the TS reference's ListIndexTypeError), valid range is -len..len-1 with
+// real negative wraparound (`i % len`, not auto-clamped), and out-of-range
+// is always an IndexError — never silently returns undefined (read) or
+// auto-grows the array (write, issue #294's original bug). This relies on
+// `array->count` already being the list's true Python length at every call
+// site: op_new_a now pre-sizes a list literal's array to its final element
+// count up front (see that case below), so by the time any LDAG/STAG runs —
+// whether finishing that same literal's construction or a later, genuinely
+// separate subscript access — `count` is already correct and this check
+// applies uniformly, with no separate "still under construction" case to
+// special-case here.
 static inline void pop_array_args(siheap_array_t **array, address_t *index) {
   sinanbox_t indexv = sistack_pop();
   sinanbox_t arrayv = sistack_pop();
@@ -113,22 +128,22 @@ static inline void pop_array_args(siheap_array_t **array, address_t *index) {
     return;
   }
 
-  if (NANBOX_ISINT(indexv)) {
-    int32_t t = NANBOX_INT(indexv);
-    if (t < 0) {
-      sifault(pynter_fault_invalid_load);
-      return;
-    }
-    *index = (address_t) t;
-  } else if (NANBOX_ISFLOAT(indexv)) {
-    // TODO check if float is integral
-    float t = (address_t) NANBOX_FLOAT(indexv);
-    if (t < 0) {
-      sifault(pynter_fault_invalid_load);
-      return;
-    }
-    *index = (address_t) t;
+  if (!NANBOX_ISINT(indexv)) {
+    sifault(pynter_fault_type);
+    return;
   }
+
+  int32_t idx = NANBOX_INT(indexv);
+  int32_t len = (int32_t) (*array)->count;
+  if (idx < 0) {
+    idx += len;
+  }
+  if (idx < 0 || idx >= len) {
+    sifault(pynter_fault_index_error);
+    return;
+  }
+
+  *index = (address_t) idx;
 }
 
 static inline bool do_internal_function(
@@ -404,6 +419,42 @@ static void main_loop(void) {
     case op_mul_f: {
       sinanbox_t v1 = sistack_pop();
       sinanbox_t v0 = sistack_pop();
+
+      // Python list repetition (list * int / int * list) — see py-slang
+      // issue #299. Checked before ARITHMETIC_TYPECHECK() since an array
+      // operand isn't NANBOX_ISNUMERIC and would otherwise incorrectly fault
+      // as a type error before this special case gets a chance to run.
+      bool v0_is_array = NANBOX_ISPTR(v0) && ((siheap_array_t *) SIHEAP_NANBOXTOPTR(v0))->header.type == sitype_array;
+      bool v1_is_array = NANBOX_ISPTR(v1) && ((siheap_array_t *) SIHEAP_NANBOXTOPTR(v1))->header.type == sitype_array;
+      if (v0_is_array || v1_is_array) {
+        // list * list is never valid, and the non-list operand must be a
+        // genuine int — bool and float are both TypeErrors (matches
+        // docs/specs/python_typing_middle_34.tex's ListMultiplyTypeError),
+        // even though a bool is numerically an int and a whole-valued float
+        // looks integral.
+        if (v0_is_array == v1_is_array || !NANBOX_ISINT(v0_is_array ? v1 : v0)) {
+          sifault(pynter_fault_type);
+          return;
+        }
+
+        siheap_array_t *src = (siheap_array_t *) SIHEAP_NANBOXTOPTR(v0_is_array ? v0 : v1);
+        int32_t n = NANBOX_INT(v0_is_array ? v1 : v0);
+        address_t srclen = src->count;
+        address_t newlen = n > 0 ? (address_t) n * srclen : 0;
+
+        siheap_array_t *result = siarray_new(newlen);
+        result->count = newlen;
+        for (address_t i = 0; i < newlen; ++i) {
+          sinanbox_t elem = siarray_get(src, i % srclen);
+          siheap_refbox(elem);
+          result->data->data[i] = elem;
+        }
+
+        siheap_derefbox(v0_is_array ? v0 : v1);
+        sistack_push(SIHEAP_PTRTONANBOX(result));
+        ADVANCE_PCONE();
+      }
+
       ARITHMETIC_TYPECHECK();
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
@@ -832,9 +883,19 @@ static void main_loop(void) {
     }
 
     case op_new_a: {
-      siheap_array_t *array = siarray_new(8);
+      // Operand is the array's final Python length (e.g. a list literal's
+      // element count) — pre-sizing here, rather than growing from empty as
+      // elements are stored, means every subsequent STAG (whether finishing
+      // this literal's own construction or a later, separate subscript
+      // assignment) sees a consistent, already-correct `count` and can use
+      // the same strict, non-growing bounds check (see pop_array_args). A
+      // size-0 operand (empty list literal `[]`) still works: siarray_new(0)
+      // and count staying 0 is exactly right for it.
+      DECLOPSTRUCT(op_oneindex);
+      siheap_array_t *array = siarray_new(instr->index);
+      array->count = instr->index;
       sistack_push(SIHEAP_PTRTONANBOX(array));
-      ADVANCE_PCONE();
+      ADVANCE_PCI();
     }
 
     case op_ldl_g:

@@ -34,7 +34,16 @@ typedef enum {
   pynter_fault_function_arity = 10,
   pynter_fault_program_error = 11,
   pynter_fault_uninitialised_heap = 12,
-  pynter_fault_stopped = 13
+  pynter_fault_stopped = 13,
+  // Python `ValueError`: argument has the right type but an out-of-domain
+  // value (e.g. math_sqrt(-1), math_acos(2)) — distinct from pynter_fault_type
+  // (Python `TypeError`, wrong type entirely), mirroring CPython's own
+  // ValueError/TypeError split for the math module's domain checks.
+  pynter_fault_value_error = 14,
+  // Python `IndexError`: a list subscript (read or write) outside
+  // -len(list)..len(list)-1 after negative-index wraparound — see
+  // pop_array_args in vm.c, and py-slang issue #299.
+  pynter_fault_index_error = 15
 } pynter_fault_t;
 
 typedef struct {

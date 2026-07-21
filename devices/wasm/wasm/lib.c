@@ -25,7 +25,10 @@ static const char *fault_names[] = {
   "internal error",
   "incorrect function arity",
   "program called error()",
-  "uninitialised heap"
+  "uninitialised heap",
+  "stopped",
+  "value error",
+  "index error"
 };
 
 static const char *type_names[] = {
