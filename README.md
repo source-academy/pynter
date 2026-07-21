@@ -13,16 +13,21 @@ Name etymology: portmanteau of <strong>Py</strong>thon and Si<strong>nter</stron
 Pynter is a fork of [Sinter](https://github.com/source-academy/sinter) — an implementation of the
 Source Virtual Machine Language (SVML) intended for microcontroller platforms like an Arduino — kept
 as a separate sister project so that giving the VM Python-specific semantics doesn't risk
-destabilizing Sinter, which remains the fallback engine for the Source curriculum. As of this fork,
-Pynter and its bytecode format, PVML, are unmodified copies of Sinter/SVML; the plan is for
-[py-slang](https://github.com/source-academy/py-slang) to compile its Python variant (SICPy) to
-PVML and run it on Pynter, diverging from SVML/Sinter only where Python's semantics actually need
-it. We currently still follow the [Source VM specification](https://github.com/source-academy/js-slang/wiki/SVML-Specification)
-as in the js-slang wiki (mirrored, and where PVML has started to diverge, updated, in the
+destabilizing Sinter, which remains the fallback engine for the Source curriculum. Pynter and its
+bytecode format, PVML, *started* as unmodified copies of Sinter/SVML, with
+[py-slang](https://github.com/source-academy/py-slang) compiling its Python variant (SICPy) to PVML
+and running it on Pynter — the plan was always to diverge from SVML/Sinter only where Python's
+semantics actually need it, and that's since begun happening for real: `NEWA` (array/list-literal
+construction) now takes a size operand pynter pre-sizes the backing array to, which the original
+SVML encoding never had, needed so Python's strict (non-auto-growing) list subscript-assignment
+rules can be enforced correctly (see [py-slang issue #299](https://github.com/source-academy/py-slang/issues/299)).
+Do not assume PVML is byte-for-byte identical to SVML anymore, even though most of it still is — see
+["Compiling your own programs"](#compiling-your-own-programs) below for what that means in practice.
+We currently still follow the [Source VM specification](https://github.com/source-academy/js-slang/wiki/SVML-Specification)
+as in the js-slang wiki as a baseline (mirrored, and where PVML has diverged, updated, in the
 [py-slang wiki](https://github.com/source-academy/py-slang/wiki), forked as
 [PVML-Specification](https://github.com/source-academy/py-slang/wiki/PVML-Specification) and
-[PVML-Instruction-Set](https://github.com/source-academy/py-slang/wiki/PVML-Instruction-Set)) and
-use the [SVML reference compiler in js-slang](https://github.com/source-academy/js-slang/blob/master/src/vm/svmc.ts).
+[PVML-Instruction-Set](https://github.com/source-academy/py-slang/wiki/PVML-Instruction-Set)).
 
 For implementation details, see [here](vm/docs/impl.md).
 
@@ -103,7 +108,24 @@ runner/runner ../test_programs/hello_world.pvm
 
 ### Compiling your own programs
 
-Use the [SVML compiler CLI utility in js-slang](https://github.com/source-academy/js-slang/blob/master/src/vm/svmc.ts) to compile programs for testing — this still produces SVML, which is what PVML currently is byte-for-byte. (A real deployment of Pynter would integrate a compiler directly instead.)
+For Python (SICPy) programs — Pynter's actual target — use
+[py-slang](https://github.com/source-academy/py-slang)'s own PVML compiler, via its `repl` CLI, to
+compile and immediately run a file against a locally-built `runner`:
+
+```
+yarn repl <path to python file> --engine pvml --pynter <path to this repo's runner binary> -v 3
+```
+
+See py-slang's README (["Running the standalone CLI (repl)"](https://github.com/source-academy/py-slang#running-the-standalone-cli-repl))
+for the full flag reference. Only Python §3 (`-v 3`) is supported, matching this project's own
+target.
+
+The [SVML compiler CLI utility in js-slang](https://github.com/source-academy/js-slang/blob/master/src/vm/svmc.ts)
+(also bundled here as [`tools/compiler/pvmc.js`](tools/compiler/pvmc.js), used by the example below)
+still works for simple Source (not Python) programs that don't build an array or list literal, but
+**do not rely on it more generally** — since PVML's `NEWA` diverged from SVML's own encoding (see
+above), any program compiled by it that constructs an array/list literal will desync Pynter's
+bytecode decoding instead of running correctly, with no clean error to signal what went wrong.
 
 Alternatively, you could also try the [web demo](https://source-academy.github.io/pynter/) (not yet deployed under this name), which uses Pynter compiled to WASM.
 
@@ -136,7 +158,9 @@ builds, packages, and publishes automatically from there, authenticating to npm 
 to this package — required since the publish step runs unattended in CI with no human present to
 supply a one-time code).
 
-For convenience, we have included a NPM package that exposes the CLI utility.
+For convenience, we have included a NPM package that exposes the CLI utility. Note this compiles
+plain Source (`.js`), not Python — see ["Compiling your own programs"](#compiling-your-own-programs)
+above for why it's no longer reliable for anything beyond simple programs with no array/list literal.
 
 Try it out:
 
