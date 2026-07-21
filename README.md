@@ -48,10 +48,32 @@ Pynter implements most of Python (SICPy) §3, except:
   - prompt
   - stringify
 
+The full `math` module (including `comb`/`factorial`/`gcd`/`isqrt`/`lcm`/`perm`/`fabs`/`fma`/`fmod`/
+`remainder`/`copysign`/`isfinite`/`isinf`/`isnan`/`ldexp`/`exp2`/`gamma`/`lgamma`/`radians`/`degrees`/
+`erf`/`erfc`), Python list indexing/assignment (negative-index wraparound, strict bounds, `bool`/
+`float` index rejection), and list multiplication (`list * int`/`int * list`, with correct
+shallow-copy semantics for nested lists) are implemented natively and verified at 100% parity against
+py-slang's own multi-engine test suite (`yarn pynter:report` in the
+[py-slang](https://github.com/source-academy/py-slang) repo, with `PYNTER_RUNNER_PATH` pointed at a
+local build of this project) — py-slang's test suite doubles as this project's own de-facto
+functional test framework; see that repo's `src/tests/utils.ts` for how tests here are generated and
+gated. Domain-restricted math functions (`acos`, `acosh`, `asin`, `atanh`, `log`, `log1p`, `log2`,
+`log10`, `sqrt`) raise a fault (`pynter_fault_value_error`, Python's `ValueError`) on out-of-domain
+input, matching CPython, rather than silently returning NaN.
+
+The SICP-style `linked-list`/`stream` preludes (`map`/`filter`/`reduce`/`for_each`/`append`/`member`/
+`remove`/`reverse`/`build_llist`/`enum_llist`/`llist_ref`, and the full `stream_*`/`build_stream`/
+`enum_stream`/`integers_from`/`eval_stream` family) are plain Python code compiled like any other
+program, so they work wherever their underlying primitives (`pair`/`head`/`tail`/`set_head`/
+`set_tail`) do — fully supported and covered by the parity suite above. Note `map`/`filter`/`reduce`
+only exist over linked lists (cons pairs) in this dialect, not over Python's native `list` type.
+
 Usage recommendations:
 
 - Treat arrays like C arrays, rather than JavaScript arrays (which are actually
-  maps). Pynter does not (yet) have optimisations for sparse arrays.
+  maps). Pynter does not (yet) have optimisations for sparse arrays. Python list subscript
+  assignment (`xs[i] = v`) itself never auto-grows regardless — an out-of-range index always raises
+  `IndexError`, matching CPython.
 
 ## Use it on a device
 
