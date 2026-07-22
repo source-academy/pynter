@@ -269,7 +269,17 @@ static inline sinanbox_t string_index(siheap_header_t *str_obj, sinanbox_t index
   siheap_string_t *result = sistring_new((address_t) (char_len + 1));
   memcpy(result->string, p, char_len);
   result->string[char_len] = '\0';
-  return SIHEAP_PTRTONANBOX(result);
+
+  // A bare sitype_string is an internal-only flattening cache
+  // (sistrpair_flatten's own output) -- siheap_is_string() faults on one
+  // reaching the stack directly (see make_string_value() in primitives.c,
+  // fixed for the same reason). Wrap it in a degenerate strpair (right =
+  // NULL), taking over its existing refcount as `left` rather than via
+  // sistrpair_new (which would add a second, unwanted ref).
+  siheap_strpair_t *pair = (siheap_strpair_t *) siheap_malloc(sizeof(siheap_strpair_t), sitype_strpair);
+  pair->left = &result->header;
+  pair->right = NULL;
+  return SIHEAP_PTRTONANBOX(pair);
 }
 
 static inline bool do_internal_function(
@@ -542,6 +552,8 @@ static void main_loop(void) {
           return;
         }
         sivm_push_complex_result(r0 - r1, i0 - i1);
+        siheap_derefbox(v0);
+        siheap_derefbox(v1);
         ADVANCE_PCONE();
       }
 
@@ -631,6 +643,8 @@ static void main_loop(void) {
         }
         // (a+bi)*(c+di) = (ac - bd) + (bc + ad)i
         sivm_push_complex_result(r0 * r1 - i0 * i1, i0 * r1 + r0 * i1);
+        siheap_derefbox(v0);
+        siheap_derefbox(v1);
         ADVANCE_PCONE();
       }
 
@@ -695,6 +709,8 @@ static void main_loop(void) {
           imag = (b * ratio - a) / denom;
         }
         sivm_push_complex_result(real, imag);
+        siheap_derefbox(v0);
+        siheap_derefbox(v1);
         ADVANCE_PCONE();
       }
 
@@ -911,6 +927,8 @@ static void main_loop(void) {
           imag = expOfReal * sinf(imagExpPart);
         }
         sivm_push_complex_result(real, imag);
+        siheap_derefbox(v0);
+        siheap_derefbox(v1);
         ADVANCE_PCONE();
       }
 
@@ -990,6 +1008,7 @@ static void main_loop(void) {
       } else if (sivm_is_complex(v1)) {
         siheap_complex_t *c = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v1);
         sivm_push_complex_result(-c->real, -c->imag);
+        siheap_derefbox(v1);
       } else {
         sifault(pynter_fault_type);
         return;
@@ -1395,6 +1414,21 @@ static void main_loop(void) {
           // create the new environment
           siheap_env_t *new_env = sienv_new(fn_obj->env, fn_code->env_size);
 
+          // Root new_env via sistate.env immediately -- it's the only
+          // environment siheap_mark_sweep() scans, and every slot is
+          // already a well-defined NANBOX_OFEMPTY() placeholder (sienv_new
+          // itself initialises all of them), so marking it is safe at any
+          // point from here on, even before the copies below run. Both
+          // siarray_new() just below (for a rest param) and sistack_new()
+          // further down call siheap_malloc(), which can trigger a GC --
+          // until now, new_env (and anything already copied into it) was
+          // reachable from no root at all, a real use-after-free/collected-
+          // out-from-under-us risk. caller_env preserves the value
+          // sistate.env held on entry, still needed below (to deref, and as
+          // the callee frame's saved return environment).
+          siheap_env_t *caller_env = sistate.env;
+          sistate.env = new_env;
+
           // check we have enough arguments on the stack
           sistack_top -= instr->num_args;
           if (sistack_top < sistack_bottom) {
@@ -1426,21 +1460,21 @@ static void main_loop(void) {
           // pop the function off the caller's stack, and deref it at the same time
           siheap_derefbox(sistack_pop());
 
-
-          // if tail call, we destroy the caller's stack now, and "return" to the caller's caller
+          // if tail call, we destroy the caller's stack now, and "return" to
+          // the caller's caller. return_env is a local, not sistate.env --
+          // sistate.env must keep pointing at new_env throughout (see above).
+          siheap_env_t *return_env;
           if (is_tailcall) {
-            siheap_deref(sistate.env);
-            sistack_destroy(&sistate.pc, &sistate.env);
+            siheap_deref(caller_env);
+            sistack_destroy(&sistate.pc, &return_env);
           } else {
             // otherwise we advance to the return address
             sistate.pc += sizeof(*instr);
+            return_env = caller_env;
           }
 
           // create the stack frame for the callee, which stores the return address and environment
-          sistack_new(fn_code->stack_size, sistate.pc, sistate.env);
-
-          // set the environment
-          sistate.env = new_env;
+          sistack_new(fn_code->stack_size, sistate.pc, return_env);
 
           // enter the function
           sistate.pc = &fn_code->code;

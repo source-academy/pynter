@@ -164,7 +164,12 @@ PYNTER_INLINEIFC void sidisplay_nanbox(sinanbox_t v, bool is_error) {
           snprintf(buf, sizeof(buf), "%sj", imag_buf);
         } else {
           sidisplay_complex_component(real_buf, sizeof(real_buf), c->real);
-          snprintf(buf, sizeof(buf), "%s%s%sj", real_buf, (c->imag >= 0.0f ? "+" : ""), imag_buf);
+          // c->imag != c->imag (not isnan(), see sidisplay_complex_component's
+          // own comment above) is true only for NaN; `>= 0.0f` alone is false
+          // for NaN, which would otherwise omit the separator ("1NaNj",
+          // unparseable) instead of "1+NaNj".
+          bool imag_nonneg_or_nan = c->imag >= 0.0f || c->imag != c->imag;
+          snprintf(buf, sizeof(buf), "%s%s%sj", real_buf, (imag_nonneg_or_nan ? "+" : ""), imag_buf);
         }
         SIVMFN_PRINT(buf, is_error);
         break;

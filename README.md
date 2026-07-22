@@ -49,11 +49,8 @@ Pynter implements most of Python (SICPy) §3, except:
   double-precision complex numbers py-slang's browser-pathway engines (CSE/PVML-in-browser/WASM) use.
 - The following Python builtins compile successfully but fault at runtime if actually called,
   since their underlying native primitive is an unimplemented stub:
-  - `str()`/`repr()` (native's own internal names for these primitive slots are "stringify"/
-    "prompt" — vestiges of this project's Source/Sinter origins, not Python-facing names)
   - `time.time()`
   - `input()`
-  - `print_llist()` (already tracked as a known gap in py-slang's own test suite, py-slang#259)
 
 The full `math` module (including `comb`/`factorial`/`gcd`/`isqrt`/`lcm`/`perm`/`fabs`/`fma`/`fmod`/
 `remainder`/`copysign`/`isfinite`/`isinf`/`isnan`/`ldexp`/`exp2`/`gamma`/`lgamma`/`radians`/`degrees`/

@@ -356,7 +356,11 @@ static void print_llist_leaf(sinanbox_t v, bool is_error) {
         snprintf(buf, sizeof(buf), "%sj", imag_buf);
       } else {
         sidisplay_complex_component(real_buf, sizeof(real_buf), c->real);
-        snprintf(buf, sizeof(buf), "%s%s%sj", real_buf, (c->imag >= 0.0f ? "+" : ""), imag_buf);
+        // c->imag != c->imag catches NaN, which `>= 0.0f` alone misses (all
+        // comparisons with NaN except != are false) -- without it, a NaN
+        // imaginary part loses its separator ("1NaNj", unparseable).
+        bool imag_nonneg_or_nan = c->imag >= 0.0f || c->imag != c->imag;
+        snprintf(buf, sizeof(buf), "%s%s%sj", real_buf, (imag_nonneg_or_nan ? "+" : ""), imag_buf);
       }
       SIVMFN_PRINT(buf, is_error);
       return;
@@ -1137,7 +1141,10 @@ static sinanbox_t str_or_repr(sinanbox_t v, bool is_repr) {
       snprintf(buf, sizeof(buf), "%sj", imag_buf);
     } else {
       sidisplay_complex_component(real_buf, sizeof(real_buf), c->real);
-      snprintf(buf, sizeof(buf), "(%s%s%sj)", real_buf, (c->imag >= 0.0f ? "+" : ""), imag_buf);
+      // See display.h's sitype_complex case for why `!= c->imag` (NaN) is
+      // ORed in here alongside `>= 0.0f`.
+      bool imag_nonneg_or_nan = c->imag >= 0.0f || c->imag != c->imag;
+      snprintf(buf, sizeof(buf), "(%s%s%sj)", real_buf, (imag_nonneg_or_nan ? "+" : ""), imag_buf);
     }
   } else if (NANBOX_ISPTR(v) && ((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))->type == sitype_function) {
     // No function-name storage in this VM's representation at all (see
