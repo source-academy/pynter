@@ -61,10 +61,21 @@ typedef struct __attribute__((__packed__)) {
    */
   uint8_t env_size;
   /**
-   * The number of arguments expected by the function.
+   * The number of arguments expected by the function. If has_rest_param is
+   * set, the last of these (slot num_args - 1) is a rest parameter: a
+   * caller may supply any number of arguments >= num_args - 1, and every
+   * one from that slot onward is collected into a single fresh array bound
+   * to it, rather than requiring exactly num_args (see op_call/op_call_t
+   * in vm.c).
    */
   uint8_t num_args;
-  uint8_t padding;
+  /**
+   * Whether the last argument (slot num_args - 1) is a rest parameter
+   * (`def f(a, *rest): ...`) rather than a plain fixed one — see num_args'
+   * own doc comment. Former unused padding byte; 0/1 rather than a wider
+   * bitfield since this is the only such flag a function currently needs.
+   */
+  uint8_t has_rest_param;
   /**
    * The first instruction.
    */

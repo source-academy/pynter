@@ -201,6 +201,11 @@ void debug_heap_obj(const siheap_header_t *o) {
     SIDEBUG("range iterator; current %d, stop %d, step %d", it->current, it->stop, it->step);
     break;
   }
+  case sitype_complex: {
+    const siheap_complex_t *c = (const siheap_complex_t *) o;
+    SIDEBUG("complex; real %f, imag %f", (double) c->real, (double) c->imag);
+    break;
+  }
   case sitype_array_data:
   case sitype_empty:
   case sitype_free:

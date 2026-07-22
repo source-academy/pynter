@@ -1,6 +1,9 @@
 #ifndef PYNTER_DISPLAY_H
 #define PYNTER_DISPLAY_H
 
+#include <math.h>
+#include <stdio.h>
+
 #include "config.h"
 #include "nanbox.h"
 #include "heap.h"
@@ -16,6 +19,41 @@
 #define SIVMFN_PRINT(v, is_error) do { \
   if (SIVMFN_PRINTFN(v)) SIVMFN_PRINTFN(v)((v), (is_error)); \
 } while (0)
+#endif
+
+/**
+ * Formats one component (real or imag) of a complex number into `buf`. Not
+ * trying to reproduce CPython's exact float-repr algorithm (scientific
+ * notation thresholds etc.) — py-slang's own plain-float printer
+ * (runner/src/runner.c's print_float) doesn't attempt that either, just raw
+ * "%f", and py-slang's native-Pynter test harness (src/tests/utils.ts,
+ * generateNativePynterTestCases) compares a complex result by parsing the
+ * printed string back via PyComplexNumber.fromString() and checking real/imag
+ * with float32 tolerance — not an exact string match — so this only needs to
+ * be parseable, not digit-for-digit identical. NaN is the one exception:
+ * fromString()'s caller in py-slang has a NaN-specific *exact* string
+ * comparison (`expected.toString()`), which for a NaN component is JS's own
+ * `Number.prototype.toString()` output, i.e. capital "NaN" — hence spelled
+ * that way here specifically, unlike this VM's other (lowercase, printf-
+ * default) NaN/inf handling for plain floats.
+ */
+PYNTER_INLINEIFC void sidisplay_complex_component(char *buf, size_t bufsize, float v);
+#ifndef __cplusplus
+PYNTER_INLINEIFC void sidisplay_complex_component(char *buf, size_t bufsize, float v) {
+  // Deliberately not isnan()/isinf(): on some libcs (e.g. emscripten's) they
+  // expand to calls to `static` helpers, which this function -- an
+  // extern-linkage `inline` per the PYNTER_INLINEIFC/inline.c scheme, like
+  // its caller sidisplay_nanbox -- isn't allowed to reference pre-C2y. NaN
+  // is the only float that isn't equal to itself; INFINITY is a constant,
+  // not a function-like macro, so both checks below are plain comparisons.
+  if (v != v) {
+    snprintf(buf, bufsize, "NaN");
+  } else if (v == INFINITY || v == -INFINITY) {
+    snprintf(buf, bufsize, v > 0 ? "inf" : "-inf");
+  } else {
+    snprintf(buf, bufsize, "%g", (double) v);
+  }
+}
 #endif
 
 PYNTER_INLINEIFC void sidisplay_strobj(siheap_header_t *obj, bool is_error);
@@ -48,6 +86,7 @@ PYNTER_INLINEIFC void sidisplay_strobj(siheap_header_t *obj, _Bool is_error) {
   case sitype_array:
   case sitype_function:
   case sitype_iterator:
+  case sitype_complex:
     break;
   }
 }
@@ -113,6 +152,28 @@ PYNTER_INLINEIFC void sidisplay_nanbox(sinanbox_t v, bool is_error) {
       case sitype_iterator:
         SIVMFN_PRINT("<range_iterator>", is_error);
         break;
+      case sitype_complex: {
+        // No parens (unlike PyComplexNumber.toString()'s general-case
+        // format): py-slang's own test harness strips them if present
+        // before parsing back (they're optional there, not required), and
+        // omitting them here keeps this printer simpler.
+        siheap_complex_t *c = (siheap_complex_t *) obj;
+        char real_buf[32], imag_buf[32], buf[80];
+        sidisplay_complex_component(imag_buf, sizeof(imag_buf), c->imag);
+        if (c->real == 0.0f) {
+          snprintf(buf, sizeof(buf), "%sj", imag_buf);
+        } else {
+          sidisplay_complex_component(real_buf, sizeof(real_buf), c->real);
+          // c->imag != c->imag (not isnan(), see sidisplay_complex_component's
+          // own comment above) is true only for NaN; `>= 0.0f` alone is false
+          // for NaN, which would otherwise omit the separator ("1NaNj",
+          // unparseable) instead of "1+NaNj".
+          bool imag_nonneg_or_nan = c->imag >= 0.0f || c->imag != c->imag;
+          snprintf(buf, sizeof(buf), "%s%s%sj", real_buf, (imag_nonneg_or_nan ? "+" : ""), imag_buf);
+        }
+        SIVMFN_PRINT(buf, is_error);
+        break;
+      }
       case sitype_array_data:
       case sitype_empty:
       case sitype_frame:

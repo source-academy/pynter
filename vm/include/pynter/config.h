@@ -13,8 +13,14 @@
 
 #ifdef PYNTER_STATIC_HEAP
 #ifndef PYNTER_HEAP_SIZE
-// "64 KB ought to be enough for anybody"
-#define PYNTER_HEAP_SIZE 0x10000
+// 3.6 MiB (3774874 bytes) -- comfortably under the 4 MiB hard ceiling that
+// NaN-boxing's 22-bit heap-pointer field allows (a pointer is encoded as a
+// byte offset from the heap's base, see nanbox.h's own doc comment and
+// SIHEAP_PTRTONANBOX in heap.h), while leaving headroom below that ceiling.
+// See the README's "Memory configuration" section for the full rationale;
+// override with -DPYNTER_HEAP_SIZE=<bytes> (CMake) or in pynter_config.h
+// (non-CMake build systems, e.g. Arduino) for memory-constrained targets.
+#define PYNTER_HEAP_SIZE 0x39999a
 #endif
 #else
 #ifdef PYNTER_HEAP_SIZE

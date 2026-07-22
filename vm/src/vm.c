@@ -46,13 +46,71 @@ static inline sinanbox_t nanbox_int_if_bool(sinanbox_t v) {
   return NANBOX_ISBOOL(v) ? NANBOX_OFINT(NANBOX_BOOL(v)) : v;
 }
 
+// Nanbox-level convenience over siheap_is_complex (heap_obj.h) — shared with
+// primitives.c, which checks the same predicate for is_complex()/real()/
+// imag()/abs().
+static inline bool sivm_is_complex(sinanbox_t v) {
+  return NANBOX_ISPTR(v) && siheap_is_complex((siheap_header_t *) SIHEAP_NANBOXTOPTR(v));
+}
+
+/**
+ * Promotes a plain numeric (int/float) or complex value into a (real, imag)
+ * pair — used by every arithmetic/equality opcode's complex branch to treat
+ * a mixed int/float/complex operand pair uniformly, matching Python's
+ * numeric tower (int|float|complex) @ complex -> complex, per
+ * docs/specs/python_typing.tex. Returns false (outputs untouched) for
+ * anything else. `NANBOX_ISNUMERIC` alone doesn't cover `bool` (a distinct
+ * nanbox tag) — that's fine here, since none of the plain-arithmetic
+ * opcodes this feeds into (op_add_g etc.) coerce bool either; only
+ * op_eq_g/op_neq_g's shared macro already applies `nanbox_int_if_bool` to
+ * its operands before calling sivm_equal, so by the time this runs there a
+ * bool has already become a plain int.
+ */
+static inline bool sivm_numeric_to_complex_parts(sinanbox_t v, float *out_real, float *out_imag) {
+  if (NANBOX_ISNUMERIC(v)) {
+    *out_real = NANBOX_TOFLOAT(v);
+    *out_imag = 0.0f;
+    return true;
+  }
+  if (sivm_is_complex(v)) {
+    siheap_complex_t *c = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v);
+    *out_real = c->real;
+    *out_imag = c->imag;
+    return true;
+  }
+  return false;
+}
+
+static inline void sivm_push_complex_result(float real, float imag) {
+  siheap_complex_t *result = sicomplex_new(real, imag);
+  sistack_push(SIHEAP_PTRTONANBOX(result));
+}
+
 bool sivm_equal(sinanbox_t l, sinanbox_t r) {
   l = nanbox_int_if_bool(l);
   r = nanbox_int_if_bool(r);
 
   if (NANBOX_IDENTICAL(l, r)) {
-    // if they are *identical* then they are equal provided they are not NaN
+    // if they are *identical* then they are equal provided they are not NaN.
+    // A complex value is a heap pointer, never bit-identical to
+    // NANBOX_CANONICAL_NAN (that's a plain-float bit pattern) even when its
+    // own real/imag component is NaN, so it needs its own check here rather
+    // than falling through to the plain-float comparison below.
+    if (sivm_is_complex(l)) {
+      siheap_complex_t *c = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(l);
+      return !(isnan(c->real) || isnan(c->imag));
+    }
     return !NANBOX_IDENTICAL(l, NANBOX_CANONICAL_NAN);
+  } else if (sivm_is_complex(l) || sivm_is_complex(r)) {
+    // Python's numeric tower: complex compares equal to a plain int/float
+    // with the same real part and zero imaginary part (component-wise,
+    // matching PyComplexNumber.equals() in py-slang's value-types.ts) —
+    // covers complex==complex and complex==int/float either way round.
+    float lr, li, rr, ri;
+    if (!sivm_numeric_to_complex_parts(l, &lr, &li) || !sivm_numeric_to_complex_parts(r, &rr, &ri)) {
+      return false;
+    }
+    return lr == rr && li == ri;
   } else if (NANBOX_ISNUMERIC(l) && NANBOX_ISNUMERIC(r)) {
     switch (NANBOX_ISFLOAT(r) << 1 | NANBOX_ISFLOAT(l)) {
       case 0: /* neither are floats */
@@ -87,7 +145,18 @@ bool sivm_equal(sinanbox_t l, sinanbox_t r) {
         return false;
       }
       for (address_t i = 0; i < la->count; i++) {
-        if (!sivm_equal(siarray_get(la, i), siarray_get(ra, i))) {
+        sinanbox_t le = siarray_get(la, i);
+        sinanbox_t re = siarray_get(ra, i);
+        // Python's list/container equality checks each element's identity
+        // FIRST (PyObject_RichCompareBool's own optimization), bypassing the
+        // "NaN != NaN" rule a bare `==` between the same two NaN-bearing
+        // values would otherwise hit -- e.g. `x = float('nan'); [x] == [x]`
+        // is True in real Python even though `x == x` alone is False. A
+        // plain sivm_equal() call here (which applies that rule
+        // unconditionally, matching top-level `==`) would wrongly return
+        // False for a list holding a NaN/NaN-complex element compared
+        // against itself.
+        if (!NANBOX_IDENTICAL(le, re) && !sivm_equal(le, re)) {
           return false;
         }
       }
@@ -144,6 +213,73 @@ static inline void pop_array_args(siheap_array_t **array, address_t *index) {
   }
 
   *index = (address_t) idx;
+}
+
+/** Length in bytes of the UTF-8 sequence starting at a given lead byte. */
+static inline size_t utf8_char_len(unsigned char lead) {
+  if ((lead & 0x80) == 0x00) return 1;
+  if ((lead & 0xE0) == 0xC0) return 2;
+  if ((lead & 0xF0) == 0xE0) return 3;
+  if ((lead & 0xF8) == 0xF0) return 4;
+  return 1; // malformed lead byte -- advance by one to avoid an infinite loop
+}
+
+/**
+ * Python str subscripting (`s[i]`) reads by Unicode code point, not UTF-8
+ * byte -- pynter's own strings are stored as raw UTF-8 (see
+ * sistrobj_tocharptr), so this walks lead bytes to find code point
+ * boundaries rather than indexing the byte array directly (a family emoji
+ * like a ZWJ sequence is several code points long; `s[1]` must land on the
+ * second one, not the second byte). Two passes: first to get the code
+ * point count (needed for negative-index wraparound and the range check,
+ * mirroring pop_array_args' own array-length logic just above), then to
+ * find the idx-th code point's own byte span. Faults the same way
+ * pop_array_args does, for the same reasons (bad index type, out of
+ * range) -- LDAG is the only caller (see its own case below); STAG never
+ * reaches here, since Python strings are immutable and pop_array_args
+ * (which STAG still uses unchanged) already rejects a non-array target.
+ */
+static inline sinanbox_t string_index(siheap_header_t *str_obj, sinanbox_t indexv) {
+  if (!NANBOX_ISINT(indexv)) {
+    sifault(pynter_fault_type);
+    return NANBOX_OFEMPTY();
+  }
+
+  const char *s = sistrobj_tocharptr(str_obj);
+  int32_t len = 0;
+  for (const char *p = s; *p; p += utf8_char_len((unsigned char) *p)) {
+    len++;
+  }
+
+  int32_t idx = NANBOX_INT(indexv);
+  if (idx < 0) {
+    idx += len;
+  }
+  if (idx < 0 || idx >= len) {
+    sifault(pynter_fault_index_error);
+    return NANBOX_OFEMPTY();
+  }
+
+  const char *p = s;
+  for (int32_t i = 0; i < idx; ++i) {
+    p += utf8_char_len((unsigned char) *p);
+  }
+  size_t char_len = utf8_char_len((unsigned char) *p);
+
+  siheap_string_t *result = sistring_new((address_t) (char_len + 1));
+  memcpy(result->string, p, char_len);
+  result->string[char_len] = '\0';
+
+  // A bare sitype_string is an internal-only flattening cache
+  // (sistrpair_flatten's own output) -- siheap_is_string() faults on one
+  // reaching the stack directly (see make_string_value() in primitives.c,
+  // fixed for the same reason). Wrap it in a degenerate strpair (right =
+  // NULL), taking over its existing refcount as `left` rather than via
+  // sistrpair_new (which would add a second, unwanted ref).
+  siheap_strpair_t *pair = (siheap_strpair_t *) siheap_malloc(sizeof(siheap_strpair_t), sitype_strpair);
+  pair->left = &result->header;
+  pair->right = NULL;
+  return SIHEAP_PTRTONANBOX(pair);
 }
 
 static inline bool do_internal_function(
@@ -313,6 +449,12 @@ static void main_loop(void) {
       sistack_push(SIHEAP_PTRTONANBOX(obj));
       ADVANCE_PCI();
     }
+    case op_lgc_c: {
+      DECLOPSTRUCT(op_complex);
+      siheap_complex_t *obj = sicomplex_new(instr->real, instr->imag);
+      sistack_push(SIHEAP_PTRTONANBOX(obj));
+      ADVANCE_PCI();
+    }
     case op_pop_g:
     case op_pop_b:
     case op_pop_f:
@@ -351,6 +493,15 @@ static void main_loop(void) {
           sifault(pynter_fault_internal_error);
           break;
         }
+      } else if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
+        float r0, i0, r1, i1;
+        if (!sivm_numeric_to_complex_parts(v0, &r0, &i0) || !sivm_numeric_to_complex_parts(v1, &r1, &i1)) {
+          SIDEBUG("Invalid operands to add.\n");
+          sifault(pynter_fault_type);
+          return;
+        }
+        siheap_complex_t *result = sicomplex_new(r0 + r1, i0 + i1);
+        r = SIHEAP_PTRTONANBOX(result);
       } else if (NANBOX_ISPTR(v0) & NANBOX_ISPTR(v1)) {
         siheap_header_t *hv0 = SIHEAP_NANBOXTOPTR(v0);
         siheap_header_t *hv1 = SIHEAP_NANBOXTOPTR(v1);
@@ -388,6 +539,24 @@ static void main_loop(void) {
     case op_sub_f: {
       sinanbox_t v1 = sistack_pop();
       sinanbox_t v0 = sistack_pop();
+
+      // Checked before ARITHMETIC_TYPECHECK(), which faults on any
+      // non-NANBOX_ISNUMERIC operand — a complex operand is a heap pointer,
+      // not numeric, so would otherwise incorrectly fault type error before
+      // this branch gets a chance to run (same pattern as op_mul_g's list-
+      // repetition special case above).
+      if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
+        float r0, i0, r1, i1;
+        if (!sivm_numeric_to_complex_parts(v0, &r0, &i0) || !sivm_numeric_to_complex_parts(v1, &r1, &i1)) {
+          sifault(pynter_fault_type);
+          return;
+        }
+        sivm_push_complex_result(r0 - r1, i0 - i1);
+        siheap_derefbox(v0);
+        siheap_derefbox(v1);
+        ADVANCE_PCONE();
+      }
+
       ARITHMETIC_TYPECHECK();
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
@@ -464,6 +633,21 @@ static void main_loop(void) {
         ADVANCE_PCONE();
       }
 
+      // Complex multiplication — same "check before ARITHMETIC_TYPECHECK()"
+      // reasoning as the array case above.
+      if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
+        float r0, i0, r1, i1;
+        if (!sivm_numeric_to_complex_parts(v0, &r0, &i0) || !sivm_numeric_to_complex_parts(v1, &r1, &i1)) {
+          sifault(pynter_fault_type);
+          return;
+        }
+        // (a+bi)*(c+di) = (ac - bd) + (bc + ad)i
+        sivm_push_complex_result(r0 * r1 - i0 * i1, i0 * r1 + r0 * i1);
+        siheap_derefbox(v0);
+        siheap_derefbox(v1);
+        ADVANCE_PCONE();
+      }
+
       ARITHMETIC_TYPECHECK();
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
@@ -495,6 +679,41 @@ static void main_loop(void) {
     case op_div_f: {
       sinanbox_t v1 = sistack_pop();
       sinanbox_t v0 = sistack_pop();
+
+      if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
+        float a, b, c, d;
+        if (!sivm_numeric_to_complex_parts(v0, &a, &b) || !sivm_numeric_to_complex_parts(v1, &c, &d)) {
+          sifault(pynter_fault_type);
+          return;
+        }
+        if (c * c + d * d == 0.0f) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
+        // Smith's algorithm (scale by the larger-magnitude component first)
+        // to avoid premature overflow/underflow — matches
+        // PyComplexNumber.divBy() in py-slang's value-types.ts exactly,
+        // itself a port of CPython's own complexobject.c division.
+        float absC = fabsf(c);
+        float absD = fabsf(d);
+        float real, imag;
+        if (absD < absC) {
+          float ratio = d / c;
+          float denom = c + d * ratio;
+          real = (a + b * ratio) / denom;
+          imag = (b - a * ratio) / denom;
+        } else {
+          float ratio = c / d;
+          float denom = d + c * ratio;
+          real = (a * ratio + b) / denom;
+          imag = (b * ratio - a) / denom;
+        }
+        sivm_push_complex_result(real, imag);
+        siheap_derefbox(v0);
+        siheap_derefbox(v1);
+        ADVANCE_PCONE();
+      }
+
       ARITHMETIC_TYPECHECK();
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
@@ -678,6 +897,41 @@ static void main_loop(void) {
     case op_pow_g: {
       sinanbox_t v1 = sistack_pop();
       sinanbox_t v0 = sistack_pop();
+
+      if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
+        float a, b, A, B;
+        if (!sivm_numeric_to_complex_parts(v0, &a, &b) || !sivm_numeric_to_complex_parts(v1, &A, &B)) {
+          sifault(pynter_fault_type);
+          return;
+        }
+        // Polar form: z**w = exp(w * log(z)) — matches PyComplexNumber.pow()
+        // in py-slang's value-types.ts exactly. z == 0 with a negative-real
+        // or non-real exponent is a ZeroDivisionError in real Python (e.g.
+        // `0**(-1)`, `0**1j`), same as plain 0**negative below.
+        float mag = hypotf(a, b);
+        float theta = atan2f(b, a);
+        float real, imag;
+        if (mag == 0.0f) {
+          if (A < 0.0f || B != 0.0f) {
+            sifault(pynter_fault_divide_by_zero);
+            return;
+          }
+          real = 0.0f;
+          imag = 0.0f;
+        } else {
+          float logMag = logf(mag);
+          float realExpPart = A * logMag - B * theta;
+          float imagExpPart = B * logMag + A * theta;
+          float expOfReal = expf(realExpPart);
+          real = expOfReal * cosf(imagExpPart);
+          imag = expOfReal * sinf(imagExpPart);
+        }
+        sivm_push_complex_result(real, imag);
+        siheap_derefbox(v0);
+        siheap_derefbox(v1);
+        ADVANCE_PCONE();
+      }
+
       ARITHMETIC_TYPECHECK();
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
@@ -751,6 +1005,10 @@ static void main_loop(void) {
         sistack_push(NANBOX_WRAP_INT(-NANBOX_INT(v1)));
       } else if (NANBOX_ISFLOAT(v1)) {
         sistack_push(NANBOX_OFFLOAT(-NANBOX_FLOAT(v1)));
+      } else if (sivm_is_complex(v1)) {
+        siheap_complex_t *c = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v1);
+        sivm_push_complex_result(-c->real, -c->imag);
+        siheap_derefbox(v1);
       } else {
         sifault(pynter_fault_type);
         return;
@@ -859,7 +1117,31 @@ static void main_loop(void) {
     case op_neq_p: {
       sinanbox_t v0 = sistack_pop();
       sinanbox_t v1 = sistack_pop();
-      bool r = NANBOX_IDENTICAL(v0, v1);
+      bool r;
+      if (sivm_is_complex(v0) && sivm_is_complex(v1) && !NANBOX_IDENTICAL(v0, v1)) {
+        // `is`/`is not` between two *distinct* complex objects compares by
+        // value, not object identity — matches CSE's own pyIdentical()
+        // (operators.ts), where PyComplexNumber is "a boxed-but-value-
+        // semantic type in this dialect": two independently-constructed
+        // complex literals with the same real/imag are `is`-identical even
+        // though they're different heap objects, unlike every other heap-
+        // allocated type here. Only applies complex-to-complex — a plain
+        // int/float is never `is` a complex regardless of numeric value
+        // (unlike `==`, which does cross-type-compare them — see
+        // sivm_equal above). The *same* object (checked first, via
+        // NANBOX_IDENTICAL, falling to the plain branch below) must stay
+        // `is`-identical to itself even when it holds NaN — CSE's own
+        // pyIdentical() has an unconditional `left === right` reference
+        // fast path ahead of its own complex-specific value-equals() branch
+        // for exactly this reason, and real == comparisons on NaN
+        // components must not apply once two operands are already known to
+        // be the same object.
+        siheap_complex_t *c0 = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v0);
+        siheap_complex_t *c1 = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v1);
+        r = c0->real == c1->real && c0->imag == c1->imag;
+      } else {
+        r = NANBOX_IDENTICAL(v0, v1);
+      }
 
       if (this_opcode == op_neq_p) {
         r = !r;
@@ -966,6 +1248,21 @@ static void main_loop(void) {
     case op_lda_g:
     case op_lda_b:
     case op_lda_f: {
+      // Strings are subscriptable in Python (`s[i]`) but pop_array_args
+      // below only ever accepts a genuine array -- peek at the container
+      // (without popping yet) to route a string operand to string_index
+      // instead, before falling through to the unchanged array path for
+      // everything else. See string_index's own doc comment.
+      sinanbox_t containerv = sistack_peek(1);
+      if (NANBOX_ISPTR(containerv) && siheap_is_string(SIHEAP_NANBOXTOPTR(containerv))) {
+        sinanbox_t indexv = sistack_pop();
+        siheap_header_t *str_obj = SIHEAP_NANBOXTOPTR(sistack_pop());
+        sinanbox_t loadv = string_index(str_obj, indexv);
+        siheap_deref(str_obj);
+        sistack_push(loadv);
+        ADVANCE_PCONE();
+      }
+
       siheap_array_t *array = NULL;
       address_t index = 0;
       pop_array_args(&array, &index);
@@ -1095,7 +1392,16 @@ static void main_loop(void) {
           // get the code
           const pvm_function_t *fn_code = fn_obj->code;
 
-          if (instr->num_args != fn_code->num_args) {
+          // A rest param (`def f(a, *rest): ...`) is always the last of
+          // num_args slots (see pvm_function_t's own doc comment) -- the
+          // caller must supply at least the fixed ones, but may supply any
+          // number beyond that; without one, the caller must match exactly,
+          // as before.
+          const uint8_t num_fixed = fn_code->has_rest_param ? fn_code->num_args - 1 : fn_code->num_args;
+          const bool arity_ok = fn_code->has_rest_param
+            ? instr->num_args >= num_fixed
+            : instr->num_args == fn_code->num_args;
+          if (!arity_ok) {
             sifault(pynter_fault_function_arity);
             return;
           }
@@ -1108,34 +1414,67 @@ static void main_loop(void) {
           // create the new environment
           siheap_env_t *new_env = sienv_new(fn_obj->env, fn_code->env_size);
 
+          // Root new_env via sistate.env immediately -- it's the only
+          // environment siheap_mark_sweep() scans, and every slot is
+          // already a well-defined NANBOX_OFEMPTY() placeholder (sienv_new
+          // itself initialises all of them), so marking it is safe at any
+          // point from here on, even before the copies below run. Both
+          // siarray_new() just below (for a rest param) and sistack_new()
+          // further down call siheap_malloc(), which can trigger a GC --
+          // until now, new_env (and anything already copied into it) was
+          // reachable from no root at all, a real use-after-free/collected-
+          // out-from-under-us risk. caller_env preserves the value
+          // sistate.env held on entry, still needed below (to deref, and as
+          // the callee frame's saved return environment).
+          siheap_env_t *caller_env = sistate.env;
+          sistate.env = new_env;
+
           // check we have enough arguments on the stack
-          sistack_top -= fn_code->num_args;
+          sistack_top -= instr->num_args;
           if (sistack_top < sistack_bottom) {
             sifault(pynter_fault_stack_underflow);
             return;
           }
 
-          // copy the arguments from the stack to the environment
-          memcpy(new_env->entry, sistack_top, fn_code->num_args*sizeof(sinanbox_t));
+          // copy the fixed arguments from the stack to the environment
+          memcpy(new_env->entry, sistack_top, num_fixed*sizeof(sinanbox_t));
+
+          if (fn_code->has_rest_param) {
+            // Collect every argument from num_fixed onward into a single
+            // fresh array bound to the last slot -- same ownership-transfer
+            // semantics as the fixed-param memcpy above (no extra ref/deref:
+            // these nanboxes are simply moving from "on the caller's stack"
+            // to "inside this array"), populated the same way
+            // sivmfn_prim_gen_list does (direct backing-store writes, count
+            // set once at the end, since siarray_put's own bounds check
+            // requires count to already be correct).
+            uint8_t rest_count = instr->num_args - num_fixed;
+            siheap_array_t *rest_arr = siarray_new(rest_count);
+            for (uint8_t i = 0; i < rest_count; ++i) {
+              rest_arr->data->data[i] = sistack_top[num_fixed + i];
+            }
+            rest_arr->count = rest_count;
+            new_env->entry[num_fixed] = SIHEAP_PTRTONANBOX(rest_arr);
+          }
 
           // pop the function off the caller's stack, and deref it at the same time
           siheap_derefbox(sistack_pop());
 
-
-          // if tail call, we destroy the caller's stack now, and "return" to the caller's caller
+          // if tail call, we destroy the caller's stack now, and "return" to
+          // the caller's caller. return_env is a local, not sistate.env --
+          // sistate.env must keep pointing at new_env throughout (see above).
+          siheap_env_t *return_env;
           if (is_tailcall) {
-            siheap_deref(sistate.env);
-            sistack_destroy(&sistate.pc, &sistate.env);
+            siheap_deref(caller_env);
+            sistack_destroy(&sistate.pc, &return_env);
           } else {
             // otherwise we advance to the return address
             sistate.pc += sizeof(*instr);
+            return_env = caller_env;
           }
 
           // create the stack frame for the callee, which stores the return address and environment
-          sistack_new(fn_code->stack_size, sistate.pc, sistate.env);
-
-          // set the environment
-          sistate.env = new_env;
+          sistack_new(fn_code->stack_size, sistate.pc, return_env);
 
           // enter the function
           sistate.pc = &fn_code->code;
