@@ -40,9 +40,15 @@
 PYNTER_INLINEIFC void sidisplay_complex_component(char *buf, size_t bufsize, float v);
 #ifndef __cplusplus
 PYNTER_INLINEIFC void sidisplay_complex_component(char *buf, size_t bufsize, float v) {
-  if (isnan(v)) {
+  // Deliberately not isnan()/isinf(): on some libcs (e.g. emscripten's) they
+  // expand to calls to `static` helpers, which this function -- an
+  // extern-linkage `inline` per the PYNTER_INLINEIFC/inline.c scheme, like
+  // its caller sidisplay_nanbox -- isn't allowed to reference pre-C2y. NaN
+  // is the only float that isn't equal to itself; INFINITY is a constant,
+  // not a function-like macro, so both checks below are plain comparisons.
+  if (v != v) {
     snprintf(buf, bufsize, "NaN");
-  } else if (isinf(v)) {
+  } else if (v == INFINITY || v == -INFINITY) {
     snprintf(buf, bufsize, v > 0 ? "inf" : "-inf");
   } else {
     snprintf(buf, bufsize, "%g", (double) v);

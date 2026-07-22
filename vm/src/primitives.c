@@ -1089,7 +1089,9 @@ static sinanbox_t make_string_value(siheap_string_t *str) {
 }
 
 static sinanbox_t str_or_repr(sinanbox_t v, bool is_repr) {
-  char buf[64];
+  // Sized to provably fit the worst case of the complex-number branch below:
+  // "(" + real_buf (<=31) + "+" + imag_buf (<=31) + "j)" + NUL == 67.
+  char buf[80];
   const char *text = buf;
 
   if (NANBOX_ISNULL(v) || NANBOX_ISUNDEF(v)) {
