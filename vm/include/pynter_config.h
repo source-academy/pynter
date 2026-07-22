@@ -34,11 +34,13 @@
 
 /**
  * Set the size of the statically-allocated heap, in bytes. Ignored if PYNTER_STATIC_HEAP
- * is not set.
+ * is not set. NaN-boxing's 22-bit heap-pointer field imposes a hard ceiling of 0x400000
+ * (4 MiB) -- see the README's "Memory configuration" section. Lower this on memory-
+ * constrained targets (e.g. Arduino/ESP32).
  *
- * Defaults to 0x10000.
+ * Defaults to 0x39999a (3.6 MiB).
  */
-// #define PYNTER_HEAP_SIZE 0x10000
+// #define PYNTER_HEAP_SIZE 0x39999a
 
 /**
  * Set the number of entries of the statically-allocated stack, in entries.
