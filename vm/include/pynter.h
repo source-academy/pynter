@@ -17,7 +17,8 @@ typedef enum {
   pynter_type_float = 5,
   pynter_type_string = 6,
   pynter_type_array = 7,
-  pynter_type_function = 8
+  pynter_type_function = 8,
+  pynter_type_complex = 9
 } pynter_type_t;
 
 typedef enum {

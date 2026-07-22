@@ -60,12 +60,28 @@ static void handle_display(unsigned int argc, sinanbox_t *argv, bool is_error) {
   } \
 } while (0)
 
+/** Unlike CHECK_ARGC (min-only -- extra args are simply ignored, the
+ * convention this VM otherwise uses throughout), rejects *too many* args
+ * too. Only used where py-slang's own TS-side implementation is similarly
+ * strict (is_pair()/is_list(): "takes exactly 1 argument") -- not a VM-wide
+ * policy change. */
+#define CHECK_ARGC_EXACT(n) do { \
+  if (argc != (n)) { \
+    sifault(pynter_fault_function_arity); \
+    return NANBOX_OFEMPTY(); \
+  } \
+} while (0)
+
 /******************************************************************************
  * Basic type-checking primitives
  ******************************************************************************/
 
+/** py-slang's Python is_list() maps to this primitive, not native's own
+ * is_list (a different concept -- a cons-pair chain, see PRIMITIVE_FUNCTIONS'
+ * doc comment in builtins.ts) -- and expects exact-arity enforcement
+ * ("is_list() takes exactly 1 argument"), hence CHECK_ARGC_EXACT here. */
 static sinanbox_t sivmfn_prim_is_array(uint8_t argc, sinanbox_t *argv) {
-  CHECK_ARGC(1);
+  CHECK_ARGC_EXACT(1);
   sinanbox_t v = *argv;
   return NANBOX_OFBOOL(NANBOX_ISPTR(v) && ((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))->type == sitype_array);
 }
@@ -111,8 +127,7 @@ static sinanbox_t sivmfn_prim_is_undefined(uint8_t argc, sinanbox_t *argv) {
 /**
  * py-slang (Python frontend) additions: Python's numeric tower distinguishes
  * int and float at the type-predicate level (is_integer()/is_float()), unlike
- * Source's single is_number(). is_complex() always reports false: Pynter has
- * no complex-number representation, so a value can never be one.
+ * Source's single is_number().
  */
 static sinanbox_t sivmfn_prim_is_integer(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
@@ -126,8 +141,79 @@ static sinanbox_t sivmfn_prim_is_float(uint8_t argc, sinanbox_t *argv) {
 
 static sinanbox_t sivmfn_prim_is_complex(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  (void) argv;
-  return NANBOX_OFBOOL(false);
+  sinanbox_t v = *argv;
+  return NANBOX_OFBOOL(NANBOX_ISPTR(v) && siheap_is_complex((siheap_header_t *) SIHEAP_NANBOXTOPTR(v)));
+}
+
+static sinanbox_t sivmfn_prim_real(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  sinanbox_t v = *argv;
+  // real()/imag() require a genuine complex value -- unlike most math_*
+  // functions, a plain int/float is a TypeError here too (matches misc.ts).
+  if (!(NANBOX_ISPTR(v) && siheap_is_complex((siheap_header_t *) SIHEAP_NANBOXTOPTR(v)))) {
+    sifault(pynter_fault_type);
+  }
+  return NANBOX_OFFLOAT(((siheap_complex_t *) SIHEAP_NANBOXTOPTR(v))->real);
+}
+
+static sinanbox_t sivmfn_prim_imag(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  sinanbox_t v = *argv;
+  if (!(NANBOX_ISPTR(v) && siheap_is_complex((siheap_header_t *) SIHEAP_NANBOXTOPTR(v)))) {
+    sifault(pynter_fault_type);
+  }
+  return NANBOX_OFFLOAT(((siheap_complex_t *) SIHEAP_NANBOXTOPTR(v))->imag);
+}
+
+/**
+ * Converts a numeric (int/float/bool) or complex value to a (real, imag)
+ * pair, for complex()'s own argument handling — mirrors misc.ts's
+ * PyComplexNumber.fromValue() minus its string-parsing branch: this VM has
+ * no string-to-number parser, so complex("3+4j")-style string arguments
+ * aren't supported and fault as a type error, unlike the CSE reference.
+ */
+static bool sivmprim_to_complex_parts(sinanbox_t v, float *out_real, float *out_imag) {
+  if (NANBOX_ISBOOL(v)) {
+    *out_real = NANBOX_BOOL(v) ? 1.0f : 0.0f;
+    *out_imag = 0.0f;
+    return true;
+  }
+  if (NANBOX_ISNUMERIC(v)) {
+    *out_real = NANBOX_TOFLOAT(v);
+    *out_imag = 0.0f;
+    return true;
+  }
+  if (NANBOX_ISPTR(v) && siheap_is_complex((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))) {
+    siheap_complex_t *c = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v);
+    *out_real = c->real;
+    *out_imag = c->imag;
+    return true;
+  }
+  return false;
+}
+
+static sinanbox_t sivmfn_prim_complex(uint8_t argc, sinanbox_t *argv) {
+  if (argc == 0) {
+    return SIHEAP_PTRTONANBOX(sicomplex_new(0.0f, 0.0f));
+  }
+  if (argc == 1) {
+    float real, imag;
+    if (!sivmprim_to_complex_parts(argv[0], &real, &imag)) {
+      sifault(pynter_fault_type);
+    }
+    return SIHEAP_PTRTONANBOX(sicomplex_new(real, imag));
+  }
+  // 2+ args: real + imag*1j (py-slang's own @Validate(null, 2, ...) caps
+  // this at 2 upstream; CHECK_ARGC-style min-only conventions elsewhere in
+  // this VM don't enforce an upper bound either, so extra args are simply
+  // ignored here rather than specially rejected).
+  float r0, i0, r1, i1;
+  if (!sivmprim_to_complex_parts(argv[0], &r0, &i0) || !sivmprim_to_complex_parts(argv[1], &r1, &i1)) {
+    sifault(pynter_fault_type);
+  }
+  // realPart.add(imagPart.mul(0+1j)): (r0+i0*i) + (r1+i1*i)*i
+  //   = (r0+i0*i) + ((r1*0 - i1*1) + (i1*0 + r1*1)*i) = (r0 - i1) + (i0 + r1)*i
+  return SIHEAP_PTRTONANBOX(sicomplex_new(r0 - i1, i0 + r1));
 }
 
 /**
@@ -144,7 +230,13 @@ static sinanbox_t sivmfn_prim_arity(uint8_t argc, sinanbox_t *argv) {
   if (NANBOX_ISPTR(v)) {
     siheap_header_t *obj = SIHEAP_NANBOXTOPTR(v);
     if (obj->type == sitype_function) {
-      return NANBOX_OFINT(((siheap_function_t *) obj)->code->num_args);
+      const pvm_function_t *code = ((siheap_function_t *) obj)->code;
+      // A rest param (slot num_args - 1, see pvm_function_t's own doc
+      // comment) isn't itself a fixed positional parameter -- matches
+      // CSE's own arity() counting convention (misc.ts), where `*args`
+      // alone contributes 0.
+      int32_t fixed_args = code->has_rest_param ? code->num_args - 1 : code->num_args;
+      return NANBOX_OFINT(fixed_args);
     }
     if (obj->type == sitype_intcont) {
       return NANBOX_OFINT(0);
@@ -185,6 +277,158 @@ static sinanbox_t sivmfn_prim_gen_list(uint8_t argc, sinanbox_t *argv) {
   arr->count = n;
 
   return SIHEAP_PTRTONANBOX(arr);
+}
+
+static bool print_llist_is_pair(sinanbox_t v) {
+  if (!NANBOX_ISPTR(v)) {
+    return false;
+  }
+  siheap_header_t *h = SIHEAP_NANBOXTOPTR(v);
+  return h->type == sitype_array && ((siheap_array_t *) h)->count == 2;
+}
+
+/** Mirrors builtins.ts's isProperLlist: iterative (not recursive), so a long
+ * tail chain can't blow the stack just walking it, even though the actual
+ * text-rendering below (print_llist_helper) is recursive like its TS
+ * counterpart. */
+static bool print_llist_is_proper(sinanbox_t v) {
+  while (print_llist_is_pair(v)) {
+    v = siarray_get((siheap_array_t *) SIHEAP_NANBOXTOPTR(v), 1);
+  }
+  return NANBOX_ISNULL(v);
+}
+
+/** Python repr of a string leaf for print_llist -- quoted and escaped, unlike
+ * sidisplay_strobj's raw print() text -- matching builtins.ts's
+ * llistLeafRepr exactly (`\` -> `\\`, `'` -> `\'`). */
+static void print_llist_string(const char *s, bool is_error) {
+  SIVMFN_PRINT("'", is_error);
+  for (const char *p = s; *p; ++p) {
+    if (*p == '\\' || *p == '\'') {
+      char esc[3] = { '\\', *p, '\0' };
+      SIVMFN_PRINT(esc, is_error);
+    } else {
+      char single[2] = { *p, '\0' };
+      SIVMFN_PRINT(single, is_error);
+    }
+  }
+  SIVMFN_PRINT("'", is_error);
+}
+
+/**
+ * Mirrors builtins.ts's llistLeafRepr exactly, including its fallback: a
+ * value that isn't None/bool/int/float/str/complex -- a closure, a
+ * non-pair-length array (a genuine Python list reached as a leaf), an
+ * iterator, ... -- prints as the same "<function>" placeholder
+ * llistLeafRepr itself falls back to, not whatever that value's own
+ * sidisplay_nanbox representation would be. This is a faithful port of an
+ * existing, already-tested behavior, not a new design choice.
+ */
+static void print_llist_leaf(sinanbox_t v, bool is_error) {
+  if (NANBOX_ISNULL(v) || NANBOX_ISUNDEF(v)) {
+    SIVMFN_PRINT("None", is_error);
+    return;
+  }
+  if (NANBOX_ISBOOL(v)) {
+    SIVMFN_PRINT(NANBOX_BOOL(v) ? "True" : "False", is_error);
+    return;
+  }
+  if (NANBOX_ISINT(v)) {
+    SIVMFN_PRINT((int32_t) NANBOX_INT(v), is_error);
+    return;
+  }
+  if (NANBOX_ISFLOAT(v)) {
+    SIVMFN_PRINT(NANBOX_FLOAT(v), is_error);
+    return;
+  }
+  if (NANBOX_ISPTR(v)) {
+    siheap_header_t *h = SIHEAP_NANBOXTOPTR(v);
+    if (siheap_is_string(h)) {
+      print_llist_string(sistrobj_tocharptr(h), is_error);
+      return;
+    }
+    if (siheap_is_complex(h)) {
+      // Same formatting sidisplay_nanbox's own sitype_complex case uses.
+      siheap_complex_t *c = (siheap_complex_t *) h;
+      char real_buf[32], imag_buf[32], buf[80];
+      sidisplay_complex_component(imag_buf, sizeof(imag_buf), c->imag);
+      if (c->real == 0.0f) {
+        snprintf(buf, sizeof(buf), "%sj", imag_buf);
+      } else {
+        sidisplay_complex_component(real_buf, sizeof(real_buf), c->real);
+        snprintf(buf, sizeof(buf), "%s%s%sj", real_buf, (c->imag >= 0.0f ? "+" : ""), imag_buf);
+      }
+      SIVMFN_PRINT(buf, is_error);
+      return;
+    }
+  }
+  SIVMFN_PRINT("<function>", is_error);
+}
+
+/**
+ * Box-and-pointer text for a linked list or pair, matching linked-list.ts's
+ * `_print_llist` (CSE) and builtins.ts's `printLlistText` (PVML-in-browser)
+ * exactly: a proper list (tail chain reaching None) renders as
+ * `llist(a, b, c)`; anything else renders as `[head, tail]`, recursing the
+ * same way at every level. Plain recursion, no memoization keyed by value/
+ * object identity -- see printLlistText's own doc comment for why that
+ * specifically matters (source-academy/js-slang#1124).
+ *
+ * `is_known_improper` avoids re-running print_llist_is_proper on every tail
+ * suffix while unrolling an improper structure's bracket notation -- once a
+ * tail position is known to continue an improper chain, the rest of that
+ * chain can only ever be improper too. A head always gets a fresh check
+ * (`is_known_improper: false`), since it's an independent substructure that
+ * may itself be a proper list.
+ */
+static void print_llist_helper(sinanbox_t n, bool is_error, bool is_known_improper) {
+  if (is_known_improper || !print_llist_is_proper(n)) {
+    if (!print_llist_is_pair(n)) {
+      print_llist_leaf(n, is_error);
+      return;
+    }
+    siheap_array_t *a = (siheap_array_t *) SIHEAP_NANBOXTOPTR(n);
+    SIVMFN_PRINT("[", is_error);
+    print_llist_helper(siarray_get(a, 0), is_error, false);
+    SIVMFN_PRINT(", ", is_error);
+    print_llist_helper(siarray_get(a, 1), is_error, true);
+    SIVMFN_PRINT("]", is_error);
+    return;
+  }
+
+  SIVMFN_PRINT("llist(", is_error);
+  sinanbox_t current = n;
+  bool first = true;
+  while (print_llist_is_pair(current)) {
+    siheap_array_t *a = (siheap_array_t *) SIHEAP_NANBOXTOPTR(current);
+    if (!first) {
+      SIVMFN_PRINT(", ", is_error);
+    }
+    print_llist_helper(siarray_get(a, 0), is_error, false);
+    first = false;
+    current = siarray_get(a, 1);
+  }
+  SIVMFN_PRINT(")", is_error);
+}
+
+/** print_llist(v): prints v's box-and-pointer text as one line and returns
+ * None, matching print()'s own convention -- see pynter#5. Deliberately
+ * NANBOX_OFNULL(), not NANBOX_OFUNDEF(): py-slang's own PVML-in-browser
+ * implementation (builtins.ts's case 127) returns bare JS `undefined`
+ * instead, but that pathway's own pvmlBoxToCseValue treats `undefined` and
+ * `null` as interchangeable when printing/converting for str() purposes,
+ * papering over the difference -- native Pynter's printer has no such
+ * normalization (NANBOX_TUNDEF and NANBOX_TNULL render as distinct text,
+ * "undefined" vs "None"), so returning the sentinel a real Python program
+ * actually expects here (None) is what matches, not a literal copy of the
+ * browser pathway's own return value. */
+static sinanbox_t sivmfn_prim_print_llist(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  print_llist_helper(argv[0], false, false);
+  if (pynter_printer_flush) {
+    pynter_printer_flush(false);
+  }
+  return NANBOX_OFNULL();
 }
 
 /******************************************************************************
@@ -587,6 +831,10 @@ static sinanbox_t sivmfn_prim_math_abs(uint8_t argc, sinanbox_t *argv) {
     return NANBOX_WRAP_INT(abs(NANBOX_INT(v)));
   } else if (NANBOX_ISFLOAT(v)) {
     return NANBOX_OFFLOAT(fabsf(NANBOX_FLOAT(v)));
+  } else if (NANBOX_ISPTR(v) && siheap_is_complex((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))) {
+    // abs(complex) is the modulus, matching misc.ts's Math.hypot(real, imag).
+    siheap_complex_t *c = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v);
+    return NANBOX_OFFLOAT(hypotf(c->real, c->imag));
   }
 
   sifault(pynter_fault_type);
@@ -741,8 +989,177 @@ static sinanbox_t sivmfn_prim_math_sign(uint8_t argc, sinanbox_t *argv) {
 
 FLOAT_ROUND_FN(floor)
 FLOAT_ROUND_FN(ceil)
-FLOAT_ROUND_FN(round)
 FLOAT_ROUND_FN(trunc)
+
+/**
+ * round(x, ndigits=None): Python's round(), not Source's original
+ * math_round -- they share dispatch index 59 (py-slang never separately
+ * registers "math_round" by name, so nothing else needs the old behavior,
+ * same as is_array/is_list sharing a slot above). Banker's rounding
+ * (round-half-to-even) via C's IEEE-754 default rounding mode (rintf) --
+ * NOT roundf(), which rounds .5 away from zero instead, wrong for Python's
+ * round() twice over (wrong tie-breaking, and it'd return a float here
+ * where the 1-arg form must return an int). 1-arg form (or an explicit
+ * `None` ndigits) always returns int; 2-arg form preserves x's own type
+ * (float stays float, int stays int -- an int input with non-negative
+ * ndigits has nothing after the decimal point to round away).
+ */
+static sinanbox_t sivmfn_prim_round(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  if (argc > 2) {
+    sifault(pynter_fault_function_arity);
+    return NANBOX_OFEMPTY();
+  }
+
+  sinanbox_t x = argv[0];
+  if (!NANBOX_ISNUMERIC(x)) {
+    sifault(pynter_fault_type);
+    return NANBOX_OFEMPTY();
+  }
+
+  bool has_ndigits = argc == 2 && !NANBOX_ISNULL(argv[1]);
+  if (has_ndigits && !NANBOX_ISINT(argv[1])) {
+    sifault(pynter_fault_type);
+    return NANBOX_OFEMPTY();
+  }
+
+  if (!has_ndigits) {
+    if (NANBOX_ISINT(x)) {
+      return x;
+    }
+    return NANBOX_WRAP_INT((int32_t) rintf(NANBOX_FLOAT(x)));
+  }
+
+  int32_t ndigits = NANBOX_INT(argv[1]);
+  if (NANBOX_ISINT(x)) {
+    if (ndigits >= 0) {
+      return x;
+    }
+    float scale = powf(10.0f, (float) -ndigits);
+    return NANBOX_WRAP_INT((int32_t) (rintf(NANBOX_TOFLOAT(x) / scale) * scale));
+  }
+
+  float xv = NANBOX_FLOAT(x);
+  float result;
+  if (ndigits >= 0) {
+    float scale = powf(10.0f, (float) ndigits);
+    result = rintf(xv * scale) / scale;
+  } else {
+    float scale = powf(10.0f, (float) -ndigits);
+    result = rintf(xv / scale) * scale;
+  }
+  return NANBOX_OFFLOAT(result);
+}
+
+/**
+ * str(v)/repr(v): deliberately minimal -- None/bool/int/float/complex/
+ * string, plus a generic "<function>" fallback for any callable (no name
+ * storage exists anywhere in this VM's function representation -- see
+ * siheap_function_t -- so that's all str()/repr() could ever say); a list
+ * value faults instead of recursing, since this is scoped to exactly what
+ * the one genuine caller of repr() needs (linked-list.prelude.ts's
+ * `_llist_to_string`, which only ever calls it on a non-pair leaf, never a
+ * list) -- see py-slang#308 for the tracking issue on the broader gap
+ * (neither str()/repr() nor this function is exercised by any native-Pynter
+ * test today). A string's str() is itself, unquoted; its repr() is quoted
+ * and escapes `\` and `'`, matching print_llist_string above (same
+ * rationale: py-slang's own llistLeafRepr/builtins.ts).
+ */
+/**
+ * Wraps a freshly-built sitype_string into a valid, stack-visible string
+ * value. siheap_is_string() explicitly rejects a bare sitype_string
+ * appearing on the stack (SIBUGM("siheap_string_t seen on stack") in
+ * heap_obj.h) -- it's meant only as sistrpair_flatten's internal
+ * flattening cache, never a value a primitive hands back directly (string
+ * concatenation, `op_add_g`'s siheap_is_string check in vm.c, faults with
+ * pynter_fault_internal_error otherwise). A degenerate sitype_strpair with
+ * `right = NULL` is exactly the shape sistrpair_flatten itself produces and
+ * recognizes (its own `if (!obj->right) return (siheap_string_t *)
+ * obj->left;` fast path) -- so wrapping one here the same way makes the
+ * result a genuine, already-flattened string as far as every other string
+ * operation is concerned. Takes over `str`'s existing refcount (from its
+ * own sistring_new allocation) as the pair's `left` -- no extra siheap_ref,
+ * since ownership is transferred, not shared.
+ */
+static sinanbox_t make_string_value(siheap_string_t *str) {
+  siheap_strpair_t *pair = (siheap_strpair_t *) siheap_malloc(sizeof(siheap_strpair_t), sitype_strpair);
+  pair->left = &str->header;
+  pair->right = NULL;
+  return SIHEAP_PTRTONANBOX(pair);
+}
+
+static sinanbox_t str_or_repr(sinanbox_t v, bool is_repr) {
+  char buf[64];
+  const char *text = buf;
+
+  if (NANBOX_ISNULL(v) || NANBOX_ISUNDEF(v)) {
+    text = "None";
+  } else if (NANBOX_ISBOOL(v)) {
+    text = NANBOX_BOOL(v) ? "True" : "False";
+  } else if (NANBOX_ISINT(v)) {
+    snprintf(buf, sizeof(buf), "%d", (int) NANBOX_INT(v));
+  } else if (NANBOX_ISFLOAT(v)) {
+    sidisplay_complex_component(buf, sizeof(buf), NANBOX_FLOAT(v));
+  } else if (NANBOX_ISPTR(v) && siheap_is_string(SIHEAP_NANBOXTOPTR(v))) {
+    const char *s = sistrobj_tocharptr(SIHEAP_NANBOXTOPTR(v));
+    if (!is_repr) {
+      siheap_string_t *result = sistring_new((address_t) (strlen(s) + 1));
+      strcpy(result->string, s);
+      return make_string_value(result);
+    }
+    // repr(): quoted, with `\` and `'` escaped -- two passes, matching
+    // sistrpair_flatten's own size-then-write pattern (heap.h's growable
+    // realloc isn't needed here, and this avoids ever holding a raw pointer
+    // into one heap object across another allocation).
+    size_t escaped_size = 2; // quotes
+    for (const char *p = s; *p; ++p) {
+      escaped_size += (*p == '\\' || *p == '\'') ? 2 : 1;
+    }
+    siheap_string_t *result = sistring_new((address_t) (escaped_size + 1));
+    char *to = result->string;
+    *to++ = '\'';
+    for (const char *p = s; *p; ++p) {
+      if (*p == '\\' || *p == '\'') {
+        *to++ = '\\';
+      }
+      *to++ = *p;
+    }
+    *to++ = '\'';
+    *to = '\0';
+    return make_string_value(result);
+  } else if (NANBOX_ISPTR(v) && siheap_is_complex(SIHEAP_NANBOXTOPTR(v))) {
+    siheap_complex_t *c = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v);
+    char real_buf[32], imag_buf[32];
+    sidisplay_complex_component(imag_buf, sizeof(imag_buf), c->imag);
+    if (c->real == 0.0f) {
+      snprintf(buf, sizeof(buf), "%sj", imag_buf);
+    } else {
+      sidisplay_complex_component(real_buf, sizeof(real_buf), c->real);
+      snprintf(buf, sizeof(buf), "(%s%s%sj)", real_buf, (c->imag >= 0.0f ? "+" : ""), imag_buf);
+    }
+  } else if (NANBOX_ISPTR(v) && ((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))->type == sitype_function) {
+    // No function-name storage in this VM's representation at all (see
+    // siheap_function_t) -- same generic fallback print()/display() use.
+    text = "<function>";
+  } else {
+    sifault(pynter_fault_type);
+    return NANBOX_OFEMPTY();
+  }
+
+  siheap_string_t *result = sistring_new((address_t) (strlen(text) + 1));
+  strcpy(result->string, text);
+  return make_string_value(result);
+}
+
+static sinanbox_t sivmfn_prim_str(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return str_or_repr(argv[0], false);
+}
+
+static sinanbox_t sivmfn_prim_repr(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  return str_or_repr(argv[0], true);
+}
 
 /******************************************************************************
  * Pair primitives
@@ -800,24 +1217,30 @@ static sinanbox_t sivmfn_prim_tail(uint8_t argc, sinanbox_t *argv) {
   return ret;
 }
 
+/** Returns None (Python's print()-like void-function convention), not
+ * NANBOX_OFUNDEF() -- that sentinel is a Sinter/Source remnant (this VM's
+ * genuine TDZ sentinel is NANBOX_TEMPTY, checked by op_ldl_g/f/b; py-slang's
+ * own compiler never emits op_lgc_u at all), never a value a Python program
+ * should actually observe. Same fix, same rationale, as print_llist above. */
 static sinanbox_t sivmfn_prim_set_head(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(2);
   siheap_array_t *a = nanbox_toarray(argv[0]);
   siheap_refbox(argv[1]);
   siarray_put(a, 0, argv[1]);
-  return NANBOX_OFUNDEF();
+  return NANBOX_OFNULL();
 }
 
+/** See sivmfn_prim_set_head's comment just above -- same fix, same rationale. */
 static sinanbox_t sivmfn_prim_set_tail(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(2);
   siheap_array_t *a = nanbox_toarray(argv[0]);
   siheap_refbox(argv[1]);
   siarray_put(a, 1, argv[1]);
-  return NANBOX_OFUNDEF();
+  return NANBOX_OFNULL();
 }
 
 static sinanbox_t sivmfn_prim_is_pair(uint8_t argc, sinanbox_t *argv) {
-  CHECK_ARGC(1);
+  CHECK_ARGC_EXACT(1);
   siheap_header_t *v = SIHEAP_NANBOXTOPTR(argv[0]);
   siheap_array_t *a = (siheap_array_t *) v;
   return NANBOX_OFBOOL(NANBOX_ISPTR(argv[0]) && v->type == sitype_array && a->count == 2);
@@ -828,7 +1251,7 @@ static sinanbox_t sivmfn_prim_is_pair(uint8_t argc, sinanbox_t *argv) {
  ******************************************************************************/
 
 static sinanbox_t sivmfn_prim_is_list(uint8_t argc, sinanbox_t *argv) {
-  CHECK_ARGC(1);
+  CHECK_ARGC_EXACT(1);
 
   sinanbox_t l = argv[0];
   while (!NANBOX_ISNULL(l)) {
@@ -2117,7 +2540,7 @@ sivmfnptr_t sivmfn_primitives[] = {
   sivmfn_prim_math_min,
   sivmfn_prim_math_pow,
   sivmfn_prim_math_random,
-  sivmfn_prim_math_round,
+  sivmfn_prim_round, // Python's round(), not Source's math_round -- see its own doc comment.
   sivmfn_prim_math_sign,
   sivmfn_prim_math_sin,
   sivmfn_prim_math_sinh,
@@ -2148,8 +2571,8 @@ sivmfnptr_t sivmfn_primitives[] = {
   sivmfn_prim_stream_tail,
   sivmfn_prim_stream_to_list,
   sivmfn_prim_tail,
-  /* stringify */ sivmfn_prim_unimpl, // TODO: do we want this?
-  /* prompt */ sivmfn_prim_unimpl, // TODO: need to call out to host
+  sivmfn_prim_str, // py-slang's str() -- see its own doc comment (deliberately leaf-values-only).
+  sivmfn_prim_repr, // py-slang's repr(), borrowing prompt's slot -- see str_or_repr's doc comment.
   // py-slang (Python frontend) additions, appended rather than inserted
   // alphabetically so none of the indices above shift.
   sivmfn_prim_is_integer,
@@ -2159,24 +2582,31 @@ sivmfnptr_t sivmfn_primitives[] = {
   sivmfn_prim_arity, // 96
   // 97-130: py-slang's PRIMITIVE_FUNCTIONS (builtins.ts) already assigns
   // these indices to real/imag/complex/parse/tokenize/
-  // apply_in_underlying_python/various math_* functions/print_llist/input —
-  // none implemented natively (browser/CSE-only, or, for print_llist,
-  // simply not yet ported). py-slang's index for a name has never had to
-  // match this array's length at the time the name was assigned (a
-  // longstanding, known mismatch between the two projects' index tables —
-  // see py-slang's README), so range() landing right after arity() at 97
-  // would silently collide with "real" instead. Every index up to range()'s
-  // real slot at 131 must stay an explicit, valid function pointer — the
-  // same clean-faulting stub already used for actually-unimplemented-but-
+  // apply_in_underlying_python/various math_* functions/print_llist/input.
+  // Most are now implemented natively (see the per-range comments below);
+  // the rest (parse/tokenize/apply_in_underlying_python/input, and
+  // math_nextafter/math_ulp which aren't implemented on the CSE side
+  // either) are genuinely browser/CSE-only, with no native counterpart to
+  // add. py-slang's index for a name has never had to match this array's
+  // length at the time the name was assigned (a longstanding, known
+  // mismatch between the two projects' index tables — see py-slang's
+  // README), so range() landing right after arity() at 97 would silently
+  // collide with "real" instead. Every index up to range()'s real slot at
+  // 131 must stay an explicit, valid function pointer — the same
+  // clean-faulting stub already used for actually-unimplemented-but-
   // Source-native primitives above (sivmfn_prim_unimpl) — rather than an
-  // implicit zero-initialized gap, which would turn any of these (e.g.
-  // print_llist, already exercised by py-slang's own native-Pynter test
-  // suite and expected to fault cleanly) into a NULL function pointer call
-  // instead of a controlled sifault().
-  // 97-103: real/imag/complex/_concat_arrays(compiler-internal)/parse/
-  // tokenize/apply_in_underlying_python — genuinely no native counterpart,
-  // browser/CSE-only (see builtins.ts's PRIMITIVE_FUNCTIONS comment).
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 97-100
+  // implicit zero-initialized gap, which would turn any of the genuinely
+  // browser/CSE-only ones into a NULL function pointer call instead of a
+  // controlled sifault().
+  // 97-99: real/imag/complex, now implemented natively (see
+  // sivmfn_prim_real/imag/complex above) — previously sivmfn_prim_unimpl
+  // stubs, back when this VM had no complex-number representation at all.
+  // 100: _concat_arrays (compiler-internal only, no name in
+  // PRIMITIVE_FUNCTIONS — see PVMLCompiler's compileSpreadCall) stays unimpl.
+  // 101-103: parse/tokenize/apply_in_underlying_python — genuinely no native
+  // counterpart, browser/CSE-only (see builtins.ts's PRIMITIVE_FUNCTIONS
+  // comment).
+  sivmfn_prim_real, sivmfn_prim_imag, sivmfn_prim_complex, sivmfn_prim_unimpl, // 97-100
   sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 101-103
   // 104-125: the math_* functions below, now implemented natively (see
   // MATH_FN_DOMAIN/gcd/lcm/comb/factorial/isqrt/perm above) — previously
@@ -2187,11 +2617,12 @@ sivmfnptr_t sivmfn_primitives[] = {
   sivmfn_prim_math_remainder, sivmfn_prim_math_copysign, sivmfn_prim_math_isfinite, sivmfn_prim_math_isinf, // 116-119
   sivmfn_prim_math_isnan, sivmfn_prim_math_ldexp, sivmfn_prim_math_exp2, sivmfn_prim_math_gamma, // 120-123
   sivmfn_prim_math_lgamma, sivmfn_prim_math_radians, // 124-125
-  // 126-130: time_time/print_llist/math_nextafter/math_ulp/input — genuinely
-  // unimplemented (no host clock/async stdin wiring, or, for print_llist,
-  // simply not yet ported; math_nextafter/math_ulp are unimplemented on the
-  // CSE side too, see math.ts).
-  sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 126-129
+  // 126, 128-130: time_time/math_nextafter/math_ulp/input — genuinely
+  // unimplemented (no host clock/async stdin wiring; math_nextafter/
+  // math_ulp are unimplemented on the CSE side too, see math.ts).
+  // 127: print_llist, now implemented natively (see sivmfn_prim_print_llist
+  // above) — previously a sivmfn_prim_unimpl stub (see pynter#5).
+  sivmfn_prim_unimpl, sivmfn_prim_print_llist, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 126-129
   sivmfn_prim_unimpl, // 130
   sivmfn_prim_range // 131
 };

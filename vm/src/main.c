@@ -68,6 +68,10 @@ static void set_result(sinanbox_t exec_result, pynter_value_t *result) {
       result->type = pynter_type_array;
       result->object_value = exec_result.as_u32;
       break;
+    case sitype_complex:
+      result->type = pynter_type_complex;
+      result->object_value = exec_result.as_u32;
+      break;
     case sitype_array_data:
     case sitype_empty:
     case sitype_frame:

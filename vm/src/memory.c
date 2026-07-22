@@ -57,6 +57,9 @@ void siheap_mdestroy(siheap_header_t *ent) {
   case sitype_iterator:
     siiterator_destroy((siheap_iterator_t *) ent);
     break;
+  case sitype_complex:
+    sicomplex_destroy((siheap_complex_t *) ent);
+    break;
   case sitype_array_data:
   case sitype_frame:
   case sitype_strconst:
@@ -137,6 +140,7 @@ static void siheap_mark(siheap_header_t *vent) {
     case sitype_strconst:
     case sitype_string:
     case sitype_iterator:
+    case sitype_complex:
       // These types have no children, no need to do anything
       break;
     case sitype_free:
@@ -215,6 +219,7 @@ static address_t sizeof_strobj(siheap_header_t *obj) {
   case sitype_array:
   case sitype_function:
   case sitype_iterator:
+  case sitype_complex:
   default:
     SIBUGM("Unknown string type\n");
     sifault(pynter_fault_internal_error);
@@ -259,6 +264,7 @@ static void write_strobj(siheap_header_t *obj, char **to) {
   case sitype_array:
   case sitype_function:
   case sitype_iterator:
+  case sitype_complex:
   default:
     SIBUGM("Unknown string type\n");
     sifault(pynter_fault_internal_error);

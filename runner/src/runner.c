@@ -42,7 +42,8 @@ static const char *type_names[] = {
   "float",
   "string",
   "array",
-  "function"
+  "function",
+  "complex"
 };
 
 void setup_internals(void);
@@ -134,6 +135,7 @@ int main(int argc, char *argv[]) {
     break;
   case pynter_type_array:
   case pynter_type_function:
+  case pynter_type_complex:
     display_object_result(&result, false);
     break;
   default:

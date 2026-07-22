@@ -102,15 +102,18 @@ typedef enum __attribute__((__packed__)) {
   op_floordiv_f = 0x58,
   op_new_iter = 0x59,
   op_for_iter = 0x5A,
-  // 0x5B-0x64 deliberately left undefined: py-slang PVML extensions
+  // 0x5B-0x63 deliberately left undefined: py-slang PVML extensions
   // (§1/§2-restricted comparisons, incremental-global-map opcodes,
-  // bigint/complex-constant loads) with no Pynter equivalent and none
-  // planned — see py-slang's opcodes.ts UNSUPPORTED_OPCODE_FEATURES.
-  // op_pow_g's byte value matches py-slang's own OpCodes.POWG (0x65)
+  // bigint-constant loads) with no Pynter equivalent and none planned —
+  // see py-slang's opcodes.ts UNSUPPORTED_OPCODE_FEATURES.
+  // op_lgc_c's byte value matches py-slang's own OpCodes.LGCC (0x64)
   // directly, rather than taking the next free slot after op_for_iter, so
   // that landing it natively needs no renumbering on py-slang's side (see
   // py-slang's PYNTER_ADDITIONAL_SUPPORTED_OPCODES, built for exactly this
-  // non-sequential landing order).
+  // non-sequential landing order) — same reasoning as op_pow_g below.
+  op_lgc_c = 0x64,
+  // op_pow_g's byte value matches py-slang's own OpCodes.POWG (0x65)
+  // directly, for the same reason.
   op_pow_g = 0x65
 } pynter_opcode_t;
 _Static_assert(sizeof(pynter_opcode_t) == 1, "enum pynter_opcode has wrong size");
@@ -131,6 +134,15 @@ PYNTER_OPSTRUCT(i32, 4,
 
 PYNTER_OPSTRUCT(f32, 4,
   float operand;
+)
+
+// op_lgc_c's operand: both components inlined directly (mirrors op_f32/
+// op_f64's "constant lives right in the instruction stream" pattern, rather
+// than a separate constant pool — see py-slang's pvml-assembler.ts for the
+// serialization side).
+PYNTER_OPSTRUCT(complex, 8,
+  float real;
+  float imag;
 )
 
 #if DBL_MANT_DIG == 53 && !defined(PYNTER_TEST_SHORT_DOUBLE)

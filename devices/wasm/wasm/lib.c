@@ -40,11 +40,12 @@ static const char *type_names[] = {
   "float",
   "string",
   "array",
-  "function"
+  "function",
+  "complex"
 };
 
 void display_object_result(pynter_value_t *res, _Bool is_error) {
-  if (res->type == pynter_type_array || res->type == pynter_type_function) {
+  if (res->type == pynter_type_array || res->type == pynter_type_function || res->type == pynter_type_complex) {
     sinanbox_t arr = NANBOX_WITH_I32(res->object_value);
     sidisplay_nanbox(arr, is_error);
   }
@@ -144,6 +145,7 @@ pynter_value_t *siwasm_run(unsigned char *code, size_t code_size) {
     break;
   case pynter_type_array:
   case pynter_type_function:
+  case pynter_type_complex:
     display_object_result(&wasm_result, false);
     break;
   default:

@@ -170,6 +170,35 @@ PYNTER_INLINE void siiterator_destroy(siheap_iterator_t *iter) {
   (void) iter;
 }
 
+/**
+ * A Python complex number (`real + imag*1j`) — see LGCC (op_lgc_c) and the
+ * arithmetic opcodes' complex branches in vm.c. Single-precision (`float`),
+ * matching this VM's existing scalar float width, rather than the double
+ * precision py-slang's own PyComplexNumber (the shared spec-of-record type
+ * used by CSE/PVML-in-browser/WASM) uses — a deliberate choice for this
+ * native VM specifically, to stay consistent with every other number here
+ * being 32-bit; see py-slang's operator-conformance-pynter.test.ts for the
+ * float32-tolerance comparison this implies for conformance testing.
+ */
+typedef struct {
+  siheap_header_t header;
+  float real;
+  float imag;
+} siheap_complex_t;
+
+PYNTER_INLINE siheap_complex_t *sicomplex_new(float real, float imag) {
+  siheap_complex_t *c = (siheap_complex_t *) siheap_malloc(sizeof(siheap_complex_t), sitype_complex);
+  c->real = real;
+  c->imag = imag;
+
+  return c;
+}
+
+/** No owned heap references (just two floats) — nothing to release. */
+PYNTER_INLINE void sicomplex_destroy(siheap_complex_t *c) {
+  (void) c;
+}
+
 typedef struct {
   siheap_header_t header;
   const opcode_t *return_address;
@@ -276,6 +305,7 @@ PYNTER_INLINEIFC const char *sistrobj_tocharptr(siheap_header_t *obj) {
   case sitype_env:
   case sitype_intcont:
   case sitype_iterator:
+  case sitype_complex:
   default:
     SIBUGM("Unknown string type\n");
     sifault(pynter_fault_internal_error);
@@ -302,9 +332,14 @@ PYNTER_INLINE _Bool siheap_is_string(siheap_header_t *h) {
   case sitype_env:
   case sitype_intcont:
   case sitype_iterator:
+  case sitype_complex:
   default:
     return false;
   }
+}
+
+PYNTER_INLINE _Bool siheap_is_complex(siheap_header_t *h) {
+  return h->type == sitype_complex;
 }
 
 #ifdef __cplusplus

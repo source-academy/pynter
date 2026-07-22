@@ -44,14 +44,16 @@ For implementation details, see [here](vm/docs/impl.md).
 Pynter implements most of Python (SICPy) §3, except:
 
 - Numbers are single-precision floating points. This means that
-  `16777216 + 1 === 16777216`.
-- Pynter does not support Python's complex numbers.
-- The following primitives are not supported:
-  - list_to_string
-  - parse_int
-  - runtime
-  - prompt
-  - stringify
+  `16777216 + 1 === 16777216`. Complex numbers (below) are single-precision too — their `real`/`imag`
+  components are each a 32-bit float, matching this VM's other numeric types, unlike the
+  double-precision complex numbers py-slang's browser-pathway engines (CSE/PVML-in-browser/WASM) use.
+- The following Python builtins compile successfully but fault at runtime if actually called,
+  since their underlying native primitive is an unimplemented stub:
+  - `str()`/`repr()` (native's own internal names for these primitive slots are "stringify"/
+    "prompt" — vestiges of this project's Source/Sinter origins, not Python-facing names)
+  - `time.time()`
+  - `input()`
+  - `print_llist()` (already tracked as a known gap in py-slang's own test suite, py-slang#259)
 
 The full `math` module (including `comb`/`factorial`/`gcd`/`isqrt`/`lcm`/`perm`/`fabs`/`fma`/`fmod`/
 `remainder`/`copysign`/`isfinite`/`isinf`/`isnan`/`ldexp`/`exp2`/`gamma`/`lgamma`/`radians`/`degrees`/
@@ -65,6 +67,15 @@ functional test framework; see that repo's `src/tests/utils.ts` for how tests he
 Domain-restricted math functions (`acos`, `acosh`, `asin`, `atanh`, `log`, `log1p`, `log2`,
 `log10`, `sqrt`) raise a fault (`pynter_fault_value_error`, Python's `ValueError`) on out-of-domain
 input, matching CPython, rather than silently returning NaN.
+
+Python's complex numbers are supported too: literals, arithmetic (`+ - * / **`, unary negation),
+`==`/`!=` (cross-type with `int`/`float`, per Python's numeric tower), `is`/`is not` (value-equality
+between two complex values specifically — the one type in this dialect where `is` doesn't mean object
+identity, matching py-slang's own CSE reference), `complex()`/`real()`/`imag()`/`is_complex()`, and a
+complex-aware `abs()` (the modulus). Ordering comparisons (`< > <= >=`) correctly remain unsupported
+for complex, matching CPython. The one gap: `complex("3+4j")`-style single-string-argument
+construction isn't supported (this VM has no string-to-number parser) — the numeric argument forms
+(0/1/2 args, `int`/`float`/`bool`/`complex`) all work.
 
 The SICP-style `linked-list`/`stream` preludes (`map`/`filter`/`reduce`/`for_each`/`append`/`member`/
 `remove`/`reverse`/`build_llist`/`enum_llist`/`llist_ref`, and the full `stream_*`/`build_stream`/
