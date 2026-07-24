@@ -88,6 +88,40 @@ Usage recommendations:
   assignment (`xs[i] = v`) itself never auto-grows regardless — an out-of-range index always raises
   `IndexError`, matching CPython.
 
+### Fault codes
+
+`pynter_run`'s return value is a `pynter_fault_t` (see `vm/include/pynter.h`) — `pynter_fault_none`
+(`0`) on a normal completion, one of the codes below otherwise. `PYNTER_DEBUG_LOGLEVEL=1` prints the
+reason for most of these at the point they're raised (see ["CMake configuration"](#cmake-configuration)
+below); every device-specific frontend (the CLI `runner`, the WASM build) additionally prints the
+fault name as part of its own trailer line once the run ends — see e.g. `runner/src/runner.c` or
+`devices/wasm/wasm/lib.c`'s `fault_names`.
+
+| # | fault | when it fires | example Python that triggers it |
+|---|---|---|---|
+| 0 | `no fault` | normal completion | — |
+| 1 | `out of memory` | the heap (see ["Memory configuration"](#memory-configuration)) is exhausted | `[0] * 10000000` |
+| 2 | `type error` | an operator or primitive is applied to operand(s) of the wrong type | `1 + "a"` |
+| 3 | `divide by zero` | `/`, `//`, or `%` with a zero divisor | `1 / 0` |
+| 4 | `stack overflow` | the VM call stack is exhausted (e.g. unbounded recursion) | `def f(): return f()`<br>`f()` |
+| 5 | `stack underflow` | the VM pops an empty value stack | not reachable from valid Python — a compiler or hand-crafted-bytecode bug |
+| 6 | `uninitialised load` | reading a global/local/enclosing-scope slot that was declared but never assigned | `def f():`<br>`    global x`<br>`    return x`<br>`f()` |
+| 7 | `invalid load` | loading from a nonexistent enclosing-scope slot | not reachable from valid Python — a compiler bug |
+| 8 | `invalid program` | the bytecode itself is malformed (e.g. an unrecognised opcode) | not reachable from valid Python — a compiler bug or corrupted `.pvm` file |
+| 9 | `internal error` | a VM invariant was violated | not reachable from valid Python — a VM bug |
+| 10 | `incorrect function arity` | a function is called with the wrong number of arguments | `def f(a, b): pass`<br>`f(1)` |
+| 11 | `program called error()` | the program calls Python's `error()` builtin | `error("asdf")` |
+| 12 | `uninitialised heap` | a run was attempted before `pynter_setup_heap`/`siwasm_alloc_heap` | API misuse by the embedder, not reachable from Python |
+| 13 | `stopped` | the host explicitly cancelled the run via `sistop()` (e.g. an external kill/interrupt hook) | not triggered from within the running program itself |
+| 14 | `value error` | Python's `ValueError` — right type, but an out-of-domain value, for the domain-restricted `math` functions (`acos`, `acosh`, `asin`, `atanh`, `log`, `log1p`, `log2`, `log10`, `sqrt`) | `sqrt(-1)` |
+| 15 | `index error` | Python's `IndexError` — a list subscript (read or write) outside `-len(list)..len(list)-1` | `[1, 2, 3][10]` |
+
+On a fault, `pynter_run`'s `result` output parameter is left zeroed (`pynter_type_unknown`, i.e.
+`0`) — there is no partial/last-known value to recover from it. The fault code above is the only
+signal of *why* the run ended; a caller that wants to report anything more specific than "the
+program faulted" needs to thread that code (or its name) through itself, the same way each
+frontend's own trailer line does.
+
 ## Use it on a device
 
 Pynter is a C library. For examples on how to use Pynter, see [the CLI
