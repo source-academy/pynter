@@ -50,7 +50,17 @@ Pynter implements most of Python (SICPy) §3, except:
 - The following Python builtins compile successfully but fault at runtime if actually called,
   since their underlying native primitive is an unimplemented stub:
   - `time.time()`
-  - `input()`
+  - `input()` — not a missing feature so much as a genuinely hard one for this VM specifically:
+    Pynter is a single-pass, synchronous C VM with no async/suspend-and-resume machinery, run
+    across several different devices (a spawned subprocess, a WASM module in a browser tab, an
+    ESP32, an Arduino, an EV3) through one shared primitive-dispatch table. "Read a byte from
+    stdin" means something different on each of those (a Web Stream, a Unix pipe, a UART, nothing
+    at all), and there's no uniform hook for that today — wiring it in a way that works
+    consistently across every target is real, scoped work, not a quick primitive to fill in. (For
+    context: py-slang's own browser-pathway CSE machine *does* support `input()`, by being
+    `async function*` throughout so it can genuinely suspend on a host-supplied stream; its
+    PVML-in-browser interpreter can't yet, for the same "no suspend point" reason as here — see
+    [py-slang#237](https://github.com/source-academy/py-slang/issues/237).)
 
 The full `math` module (including `comb`/`factorial`/`gcd`/`isqrt`/`lcm`/`perm`/`fabs`/`fma`/`fmod`/
 `remainder`/`copysign`/`isfinite`/`isinf`/`isnan`/`ldexp`/`exp2`/`gamma`/`lgamma`/`radians`/`degrees`/
@@ -318,12 +328,18 @@ NANBOX_INTMAX =  0x0FFFFF =  1,048,575
 re-encoded as a `float` instead (`NANBOX_WRAP_INT`) rather than raising a
 fault — so `type()` for the *same* Python source can differ purely based on
 a literal's magnitude: `1048575` is a genuine `int`; `1048576` is a `float`.
-py-slang's `PVMLCompiler` (`targetsPynter` mode) matches this exactly via its
-own `PYNTER_INT_MIN`/`PYNTER_INT_MAX` constants when deciding between the
-`LGCI` and `LGCF64` opcodes, so a value that would silently become a float at
-the VM level is compiled as one openly, rather than tagged `LGCI` and then
-quietly reinterpreted anyway (see py-slang's `pvml-compiler.ts` and
-[pynter#6](https://github.com/source-academy/pynter/issues/6)).
+
+py-slang's `PVMLCompiler` (`targetsPynter` mode) does not currently narrow its
+`LGCI`-vs-`LGCF64` decision to this 21-bit window — it decides using the full
+32-bit signed range (`I32_MIN`/`I32_MAX` in `pvml-compiler.ts`) instead. In
+practice this means a literal like `1048576` (well within 32 bits) still
+compiles to `LGCI`, is serialised as a full 32-bit operand, and only gets
+silently reinterpreted as a `float` at the VM level when loaded (via
+`NANBOX_WRAP_INT`, as above) — the same end result (`type()` disagreeing with
+what the source looks like it should be), but compiled as if it *were* a
+representable `int`, rather than openly as a `float`. See
+[pynter#6](https://github.com/source-academy/pynter/issues/6) for the original
+report and py-slang's `pvml-compiler.ts` for the current encoding logic.
 
 This is a deliberate, narrow limit, not arbitrary-precision `int` support —
 matching Pynter's embedded/32-bit-target design goals (see the top-level
