@@ -318,9 +318,8 @@ representable `int`, rather than openly as a `float`. See
 [pynter#6](https://github.com/source-academy/pynter/issues/6) for the original
 report and py-slang's `pvml-compiler.ts` for the current encoding logic.
 
-This is a deliberate, narrow limit, not arbitrary-precision `int` support —
-matching Pynter's embedded/32-bit-target design goals (see the top-level
-project description). There is no plan to widen it without a demonstrated
+This is a deliberate, narrow limit, not arbitrary-precision `int` support — matching Pynter's
+design as a VM for embedded/32-bit targets. There is no plan to widen it without a demonstrated
 need; the NaN-box does have unused address space that *could* fit a wider
 tag if one ever becomes necessary (see `nanbox.h`'s own header comment for
 the currently-unused ranges), but speculatively building that now isn't
@@ -356,8 +355,9 @@ SVML encoding never had, needed so Python's strict (non-auto-growing) list subsc
 rules can be enforced correctly (see [py-slang issue #299](https://github.com/source-academy/py-slang/issues/299)).
 Do not assume PVML is byte-for-byte identical to SVML anymore, even though most of it still is — see
 ["Compiling your own programs"](#compiling-your-own-programs) above for what that means in practice.
-We currently still follow the [Source VM specification](https://github.com/source-academy/js-slang/wiki/SVML-Specification)
-as in the js-slang wiki as a baseline (mirrored, and where PVML has diverged, updated, in the
-[py-slang wiki](https://github.com/source-academy/py-slang/wiki), forked as
-[PVML-Specification](https://github.com/source-academy/py-slang/wiki/PVML-Specification) and
-[PVML-Instruction-Set](https://github.com/source-academy/py-slang/wiki/PVML-Instruction-Set)).
+PVML's own [Specification](https://github.com/source-academy/py-slang/wiki/PVML-Specification) and
+[Instruction-Set](https://github.com/source-academy/py-slang/wiki/PVML-Instruction-Set) pages, in the
+[py-slang wiki](https://github.com/source-academy/py-slang/wiki), were each forked once from the
+corresponding [SVML-Specification](https://github.com/source-academy/js-slang/wiki/SVML-Specification)/SVML-Instruction-Set
+page in the js-slang wiki as a starting point, and have been maintained independently from there as
+PVML has diverged.
