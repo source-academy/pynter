@@ -355,7 +355,7 @@ SVML encoding never had, needed so Python's strict (non-auto-growing) list subsc
 rules can be enforced correctly (see [py-slang issue #299](https://github.com/source-academy/py-slang/issues/299)).
 Do not assume PVML is byte-for-byte identical to SVML anymore, even though most of it still is — see
 ["Compiling your own programs"](#compiling-your-own-programs) above for what that means in practice.
-PVML's own [Specification](https://github.com/source-academy/py-slang/wiki/PVML-Specification) and
+PVML's [Specification](https://github.com/source-academy/py-slang/wiki/PVML-Specification) and
 [Instruction-Set](https://github.com/source-academy/py-slang/wiki/PVML-Instruction-Set) pages, in the
 [py-slang wiki](https://github.com/source-academy/py-slang/wiki), were each forked once from the
 corresponding [SVML-Specification](https://github.com/source-academy/js-slang/wiki/SVML-Specification)/SVML-Instruction-Set
