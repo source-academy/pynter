@@ -114,8 +114,27 @@ static sinanbox_t fn_millis(uint8_t argc, sinanbox_t *argv) {
 // Backs sivmfn_prim_time_time's Arduino branch (primitives.c, pynter#28) --
 // declared in pynter/vm.h, defined here since it needs Arduino.h's
 // millis(), which primitives.c's plain-C translation unit can't include.
+//
+// millis() is an unsigned long (32-bit on every Arduino target this VM
+// supports) that overflows back to 0 after ~49.7 days of continuous uptime
+// (see docs.arduino.cc/language-reference/en/functions/time/millis) -- a
+// naive `millis() / 1000.0f` would make time_time() suddenly *decrease*
+// right at that rollover, breaking the monotonically-increasing guarantee
+// this primitive exists to provide. `now - start` on unsigned long operands
+// wraps correctly modulo 2^32 even once `now` has rolled past `start`
+// (Arduino's own documented idiom for this exact problem), so this stays
+// correct across a single rollover -- more than enough for any robot
+// program that calls time_time() at least once within a 49.7-day span.
 extern "C" float pynter_arduino_seconds_since_start() {
-  return millis() / 1000.0f;
+  static unsigned long start = 0;
+  static bool started = false;
+  unsigned long now = millis();
+  if (!started) {
+    start = now;
+    started = true;
+  }
+  unsigned long elapsed_ms = now - start;
+  return elapsed_ms / 1000.0f;
 }
 
 static sinanbox_t attach_interrupt(uint8_t argc, sinanbox_t *argv) {
