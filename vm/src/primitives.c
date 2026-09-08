@@ -1,3 +1,9 @@
+// clock_gettime()/CLOCK_MONOTONIC (sivmfn_prim_time_time's native/EV3/WASM
+// path below) are POSIX, not ISO C11 -- glibc hides them under -std=c11 (as
+// opposed to -std=gnu11) unless a feature-test macro asks for them
+// explicitly. Must come before any header is included.
+#define _POSIX_C_SOURCE 200809L
+
 #include <pynter/config.h>
 
 #include <stdint.h>
@@ -5,6 +11,11 @@
 #include <string.h>
 #include <limits.h>
 #include <math.h>
+#include <time.h>
+
+#if defined(ESP_PLATFORM)
+#include <esp_timer.h>
+#endif
 
 #include <pynter/nanbox.h>
 #include <pynter/fault.h>
@@ -2477,6 +2488,52 @@ static sinanbox_t sivmfn_prim_error(uint8_t argc, sinanbox_t *argv) {
   return NANBOX_OFEMPTY();
 }
 
+/**
+ * Python's time.time() -- pynter#28. Deliberately *not* real wall-clock
+ * epoch time, even on devices that have one (native, EV3): sinanbox_t's
+ * float is 32 bits, and an epoch timestamp (~1.8e9 today) only has ~128s of
+ * resolution at that magnitude in float32 -- useless for the elapsed-time
+ * timing (sensor loops, delays) this exists for. Every device instead
+ * returns seconds since some monotonically-increasing reference point close
+ * to program start, kept small so float32 stays precise to well under a
+ * millisecond for any realistic run length. (EV3 in particular has no
+ * battery-backed RTC anyway -- ev3dev docs: "every time you disconnect the
+ * battery from the EV3, the clock is reset" -- so its wall-clock value
+ * would also just be wrong, on top of imprecise.)
+ */
+static sinanbox_t sivmfn_prim_time_time(uint8_t argc, sinanbox_t *argv) {
+  (void) argc; (void) argv;
+#if defined(ARDUINO)
+  // No RTC; devices/arduino/internal_functions.cpp provides this (millis()-
+  // based) definition -- Arduino.h's C++-only content can't be included
+  // from this file's plain-C translation units.
+  return NANBOX_OFFLOAT(pynter_arduino_seconds_since_start());
+#elif defined(ESP_PLATFORM)
+  // esp_timer_get_time(): microseconds since boot, always available (no RTC/
+  // SNTP configuration needed) -- boot is close enough to program start here,
+  // since ESP-IDF apps have no other workload running before app_main().
+  return NANBOX_OFFLOAT((float) (esp_timer_get_time() / 1000000.0));
+#else
+  // Native, EV3, WASM (Emscripten's libc backs this with performance.now()/
+  // Date.now(), same as any other hosted C11 target): CLOCK_MONOTONIC's own
+  // epoch is "since system boot", which -- unlike a fresh microcontroller
+  // reset -- could be an arbitrarily large, imprecise-in-float32 number on a
+  // long-uptime machine, so the reference point is captured on this
+  // primitive's first call instead, once per process.
+  static struct timespec start;
+  static bool started = false;
+  struct timespec now;
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  if (!started) {
+    start = now;
+    started = true;
+  }
+  double elapsed = (double) (now.tv_sec - start.tv_sec)
+    + (double) (now.tv_nsec - start.tv_nsec) / 1e9;
+  return NANBOX_OFFLOAT((float) elapsed);
+#endif
+}
+
 static sinanbox_t sivmfn_prim_unimpl(uint8_t argc, sinanbox_t *argv) {
   (void) argc; (void) argv;
   SIBUGV("Unimplemented primitive function %02x at address 0x%tx\n", *(sistate.pc + 1), SISTATE_CURADDR);
@@ -2626,12 +2683,15 @@ sivmfnptr_t sivmfn_primitives[] = {
   sivmfn_prim_math_remainder, sivmfn_prim_math_copysign, sivmfn_prim_math_isfinite, sivmfn_prim_math_isinf, // 116-119
   sivmfn_prim_math_isnan, sivmfn_prim_math_ldexp, sivmfn_prim_math_exp2, sivmfn_prim_math_gamma, // 120-123
   sivmfn_prim_math_lgamma, sivmfn_prim_math_radians, // 124-125
-  // 126, 128-130: time_time/math_nextafter/math_ulp/input — genuinely
-  // unimplemented (no host clock/async stdin wiring; math_nextafter/
-  // math_ulp are unimplemented on the CSE side too, see math.ts).
+  // 126: time_time, now implemented natively across every device (see
+  // sivmfn_prim_time_time above) — previously a sivmfn_prim_unimpl stub
+  // (pynter#28).
   // 127: print_llist, now implemented natively (see sivmfn_prim_print_llist
   // above) — previously a sivmfn_prim_unimpl stub (see pynter#5).
-  sivmfn_prim_unimpl, sivmfn_prim_print_llist, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 126-129
+  // 128-130: math_nextafter/math_ulp/input — genuinely unimplemented
+  // (math_nextafter/math_ulp aren't implemented on the CSE side either, see
+  // math.ts; input needs async stdin wiring this VM doesn't have).
+  sivmfn_prim_time_time, sivmfn_prim_print_llist, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 126-129
   sivmfn_prim_unimpl, // 130
   sivmfn_prim_range // 131
 };

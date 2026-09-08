@@ -111,6 +111,13 @@ static sinanbox_t fn_millis(uint8_t argc, sinanbox_t *argv) {
   return wrap_integer(millis());
 }
 
+// Backs sivmfn_prim_time_time's Arduino branch (primitives.c, pynter#28) --
+// declared in pynter/vm.h, defined here since it needs Arduino.h's
+// millis(), which primitives.c's plain-C translation unit can't include.
+extern "C" float pynter_arduino_seconds_since_start() {
+  return millis() / 1000.0f;
+}
+
 static sinanbox_t attach_interrupt(uint8_t argc, sinanbox_t *argv) {
   (void) argc; (void) argv;
   // TODO this needs special interpreter support

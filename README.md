@@ -24,9 +24,23 @@ Pynter implements most of Python (SICPy) §3, except:
   `16777216 + 1 === 16777216`. Complex numbers (below) are single-precision too — their `real`/`imag`
   components are each a 32-bit float, matching this VM's other numeric types, unlike the
   double-precision complex numbers py-slang's browser-pathway engines (CSE/PVML-in-browser/WASM) use.
+- `time_time()` deliberately does **not** return real wall-clock/epoch time, even on devices that
+  have one (native, EV3) — it returns seconds since approximately when the program started, as a
+  monotonically increasing value. This follows directly from the single-precision point above: an
+  epoch timestamp (~1.8e9 today) only has ~128 seconds of resolution at that magnitude in a 32-bit
+  float, which would make it useless for the elapsed-time timing (sensor loops, delays) this exists
+  for; keeping the value small keeps it precise. (EV3 also has no battery-backed RTC in the first
+  place — ev3dev's own docs: "every time you disconnect the battery from the EV3, the clock is
+  reset" — so real wall-clock time would be inaccurate there even before the precision problem.)
+  Concretely: native/EV3/WASM measure from this primitive's first call in the process (`CLOCK_MONOTONIC`,
+  not wall-clock, so a long-uptime machine's own boot time can't leak in as a large, imprecise
+  number); ESP32/Arduino measure from device boot (`esp_timer_get_time()`/`millis()`), which is
+  already close enough to "program start" on those, single-program targets. This means values are
+  **not comparable across separate program runs** (unlike CPython's `time.time()`), and are only
+  meaningful as a difference between two calls within the same run — see `sivmfn_prim_time_time`
+  in `vm/src/primitives.c` for the full reasoning.
 - The following Python builtins compile successfully but fault at runtime if actually called,
   since their underlying native primitive is an unimplemented stub:
-  - `time.time()`
   - `input()` — not a missing feature so much as a genuinely hard one for this VM specifically:
     Pynter is a single-pass, synchronous C VM with no async/suspend-and-resume machinery, run
     across several different devices (a spawned subprocess, a WASM module in a browser tab, an
