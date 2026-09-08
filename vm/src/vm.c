@@ -718,15 +718,31 @@ static void main_loop(void) {
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
       case 0: /* neither are floats */
+        if (NANBOX_INT(v1) == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
         r = NANBOX_OFFLOAT(((float) NANBOX_INT(v0)) / NANBOX_INT(v1));
         break;
       case 1: /* v0 is float */
+        if (NANBOX_INT(v1) == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
         r = NANBOX_OFFLOAT(NANBOX_FLOAT(v0) / NANBOX_INT(v1));
         break;
       case 2: /* v1 is float */
+        if (NANBOX_FLOAT(v1) == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
         r = NANBOX_OFFLOAT(NANBOX_INT(v0) / NANBOX_FLOAT(v1));
         break;
       case 3: /* both are float */
+        if (NANBOX_FLOAT(v1) == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
         r = NANBOX_OFFLOAT(NANBOX_FLOAT(v0) / NANBOX_FLOAT(v1));
         break;
       default:
@@ -819,12 +835,11 @@ static void main_loop(void) {
     // toward zero, e.g. -7 / 3 == -2 in C) — same floored-division family as
     // `%` just above (indeed floor(a/b)*b + (a mod b) == a always holds).
     // Stays int-typed when both operands are ints, matching op_mod_g's
-    // case-0 branch, not op_div_g's "always float" true division. Unlike
-    // op_div_g/op_mod_g elsewhere in this file (which predate — and don't
-    // check for — zero divisors), this is new code with no existing
-    // callers to stay bit-compatible with, so it raises Python's actual
-    // ZeroDivisionError (pynter_fault_divide_by_zero) rather than silently
-    // producing whatever IEEE float division or C's UB on `%0` would give.
+    // case-0 branch, not op_div_g's "always float" true division. Raises
+    // Python's actual ZeroDivisionError (pynter_fault_divide_by_zero) on a
+    // zero divisor, in every int/float combination, matching op_div_g/
+    // op_mod_g just above (pynter#31 — op_div_g's own check was missing
+    // this until then, silently producing IEEE `inf`/`nan` instead).
     case op_floordiv_g:
     case op_floordiv_f: {
       sinanbox_t v1 = sistack_pop();
