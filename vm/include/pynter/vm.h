@@ -88,6 +88,14 @@ bool sivm_equal(sinanbox_t l, sinanbox_t r);
 
 void sistop(void);
 
+#ifdef ARDUINO
+// Seconds since ~boot, for sivmfn_prim_time_time (primitives.c) -- Arduino
+// has no RTC. Defined in devices/arduino/internal_functions.cpp (millis()-
+// based), since Arduino.h's C++-only content can't be included from
+// primitives.c's plain-C translation unit.
+float pynter_arduino_seconds_since_start(void);
+#endif
+
 #define SISTATE_CURADDR (sistate.pc - sistate.program)
 #define SISTATE_ADDRTOPC(addr) (sistate.program + (addr))
 
