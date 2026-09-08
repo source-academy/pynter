@@ -88,7 +88,7 @@ fault name as part of its own trailer line once the run ends — see e.g. `runne
 |---|---|---|---|
 | 0 | `no fault` | normal completion | — |
 | 1 | `out of memory` | the heap (see ["Memory configuration"](#memory-configuration)) is exhausted | `[0] * 10000000` |
-| 2 | `type error` | an operator or primitive is applied to operand(s) of the wrong type | `1 + "a"` |
+| 2 | `type error` | an operator or primitive is applied to operand(s) of the wrong type; or an `if`/`elif`/`while` condition, or a conditional expression's (ternary's) test, is not a `bool` | `1 + "a"`<br>`if 1:`<br>`    pass` |
 | 3 | `divide by zero` | `/`, `//`, or `%` with a zero divisor | `1 / 0` |
 | 4 | `stack overflow` | the VM call stack is exhausted (e.g. unbounded recursion) | `def f(): return f()`<br>`f()` |
 | 5 | `stack underflow` | the VM pops an empty value stack | not reachable from valid Python — a compiler or hand-crafted-bytecode bug |

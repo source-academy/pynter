@@ -1292,6 +1292,14 @@ static void main_loop(void) {
 
     case op_br_t:
     case op_br_f: {
+      // py-slang's PVML compiler emits BRT/BRF for every if/elif condition,
+      // while-loop condition, and conditional-expression (ternary) test - so
+      // the NANBOX_ISBOOL check below is what enforces "Python §x only
+      // allows boolean expressions" there (see e.g. docs/md/README_1.md's
+      // "Conditional statements and conditional expressions" section), the
+      // same rule the in-browser PVML interpreter's branchIfTrue/
+      // branchIfFalse already enforce. Confirmed still in force here; see
+      // py-slang issue #438.
       DECLOPSTRUCT(op_offset);
       sinanbox_t v = sistack_pop();
       if (!NANBOX_ISBOOL(v)) {
