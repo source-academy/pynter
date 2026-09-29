@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -79,12 +80,22 @@ static void print_flush(bool is_error) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 2) {
-    eprintf("Usage: %s <program>\n", argv[0]);
+  // `sling` (the transport layer shared with the Source pipeline's sinter_host) always invokes
+  // whatever binary SINTER_HOST_PATH points at as `<binary> --from-sling <program_path>` (see
+  // sling/linux/src/main.c's begin_run_program). sinter_host parses that flag; this runner never
+  // did, so when SINTER_HOST_PATH points here directly, argv[1] was literally the string
+  // "--from-sling" and the real path in argv[2] was never read - producing "Failed to open
+  // program: No such file or directory" on every single run, regardless of the program itself.
+  int path_arg = 1;
+  if (argc > 1 && strcmp(argv[1], "--from-sling") == 0) {
+    path_arg = 2;
+  }
+  if (argc <= path_arg) {
+    eprintf("Usage: %s [--from-sling] <program>\n", argv[0]);
     return 1;
   }
 
-  int program_fd = check_posix(open(argv[1], O_RDONLY), "Failed to open program");
+  int program_fd = check_posix(open(argv[path_arg], O_RDONLY), "Failed to open program");
   off_t size;
   {
     struct stat stat_buf;
