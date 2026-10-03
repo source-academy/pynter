@@ -469,8 +469,8 @@ static void main_loop(void) {
     // TODO: optimised _f variants
     case op_add_g:
     case op_add_f: {
-      sinanbox_t v1 = sistack_pop();
-      sinanbox_t v0 = sistack_pop();
+      sinanbox_t v1 = nanbox_int_if_bool(sistack_pop());
+      sinanbox_t v0 = nanbox_int_if_bool(sistack_pop());
       sinanbox_t r;
 
       if (NANBOX_ISNUMERIC(v0) && NANBOX_ISNUMERIC(v1)) {
@@ -537,8 +537,8 @@ static void main_loop(void) {
     break;
     case op_sub_g:
     case op_sub_f: {
-      sinanbox_t v1 = sistack_pop();
-      sinanbox_t v0 = sistack_pop();
+      sinanbox_t v1 = nanbox_int_if_bool(sistack_pop());
+      sinanbox_t v0 = nanbox_int_if_bool(sistack_pop());
 
       // Checked before ARITHMETIC_TYPECHECK(), which faults on any
       // non-NANBOX_ISNUMERIC operand — a complex operand is a heap pointer,
@@ -633,6 +633,12 @@ static void main_loop(void) {
         ADVANCE_PCONE();
       }
 
+      // As in CPython, a bool is an int here (True * 2.5 == 2.5). Deliberately
+      // after the list-repetition case above, which rejects bool (spec's
+      // ListMultiplyTypeError).
+      v0 = nanbox_int_if_bool(v0);
+      v1 = nanbox_int_if_bool(v1);
+
       // Complex multiplication — same "check before ARITHMETIC_TYPECHECK()"
       // reasoning as the array case above.
       if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
@@ -677,8 +683,8 @@ static void main_loop(void) {
 
     case op_div_g:
     case op_div_f: {
-      sinanbox_t v1 = sistack_pop();
-      sinanbox_t v0 = sistack_pop();
+      sinanbox_t v1 = nanbox_int_if_bool(sistack_pop());
+      sinanbox_t v0 = nanbox_int_if_bool(sistack_pop());
 
       if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
         float a, b, c, d;
@@ -774,8 +780,8 @@ static void main_loop(void) {
     // fmodf was accidentally providing for free before.
     case op_mod_g:
     case op_mod_f: {
-      sinanbox_t v1 = sistack_pop();
-      sinanbox_t v0 = sistack_pop();
+      sinanbox_t v1 = nanbox_int_if_bool(sistack_pop());
+      sinanbox_t v0 = nanbox_int_if_bool(sistack_pop());
       ARITHMETIC_TYPECHECK();
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
@@ -854,8 +860,8 @@ static void main_loop(void) {
     // this until then, silently producing IEEE `inf`/`nan` instead).
     case op_floordiv_g:
     case op_floordiv_f: {
-      sinanbox_t v1 = sistack_pop();
-      sinanbox_t v0 = sistack_pop();
+      sinanbox_t v1 = nanbox_int_if_bool(sistack_pop());
+      sinanbox_t v0 = nanbox_int_if_bool(sistack_pop());
       ARITHMETIC_TYPECHECK();
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
@@ -922,10 +928,16 @@ static void main_loop(void) {
     // `0 ** negative` is Python's ZeroDivisionError, checked explicitly
     // since C's pow/powf would otherwise happily return +inf.
     case op_pow_g: {
-      sinanbox_t v1 = sistack_pop();
-      sinanbox_t v0 = sistack_pop();
+      sinanbox_t v1 = nanbox_int_if_bool(sistack_pop());
+      sinanbox_t v0 = nanbox_int_if_bool(sistack_pop());
 
-      if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
+      // As in CPython, a negative base with a non-integer exponent yields a
+      // complex result ((-1) ** 1.5 is -1j-ish), not nan: route it through the
+      // polar-form branch below. Integer-valued exponents stay on the real path.
+      bool negbase_fracexp = NANBOX_ISNUMERIC(v0) && NANBOX_ISFLOAT(v1) && NANBOX_TOFLOAT(v0) < 0.0f &&
+                             isfinite(NANBOX_FLOAT(v1)) && NANBOX_FLOAT(v1) != floorf(NANBOX_FLOAT(v1));
+
+      if (sivm_is_complex(v0) || sivm_is_complex(v1) || negbase_fracexp) {
         float a, b, A, B;
         if (!sivm_numeric_to_complex_parts(v0, &a, &b) || !sivm_numeric_to_complex_parts(v1, &A, &B)) {
           sifault(pynter_fault_type);
@@ -1026,7 +1038,7 @@ static void main_loop(void) {
 
     case op_neg_g:
     case op_neg_f: {
-      sinanbox_t v1 = sistack_pop();
+      sinanbox_t v1 = nanbox_int_if_bool(sistack_pop());
 
       if (NANBOX_ISINT(v1)) {
         sistack_push(NANBOX_WRAP_INT(-NANBOX_INT(v1)));
