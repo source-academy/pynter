@@ -933,9 +933,10 @@ static void main_loop(void) {
 
       // As in CPython, a negative base with a non-integer exponent yields a
       // complex result ((-1) ** 1.5 is -1j-ish), not nan: route it through the
-      // polar-form branch below. Integer-valued exponents stay on the real path.
+      // polar-form branch below. Integer-valued exponents and an infinite base stay
+      // on the real path ((-inf) ** 0.5 is inf in CPython; polar form would give nan).
       bool negbase_fracexp = NANBOX_ISNUMERIC(v0) && NANBOX_ISFLOAT(v1) && NANBOX_TOFLOAT(v0) < 0.0f &&
-                             isfinite(NANBOX_FLOAT(v1)) && NANBOX_FLOAT(v1) != floorf(NANBOX_FLOAT(v1));
+                             isfinite(NANBOX_TOFLOAT(v0)) && isfinite(NANBOX_FLOAT(v1)) && NANBOX_FLOAT(v1) != floorf(NANBOX_FLOAT(v1));
 
       if (sivm_is_complex(v0) || sivm_is_complex(v1) || negbase_fracexp) {
         float a, b, A, B;
@@ -955,7 +956,8 @@ static void main_loop(void) {
             sifault(pynter_fault_divide_by_zero);
             return;
           }
-          real = 0.0f;
+          // 0 ** 0j is 1+0j in CPython (zero exponent identity), else 0j.
+          real = (A == 0.0f) ? 1.0f : 0.0f;
           imag = 0.0f;
         } else {
           float logMag = logf(mag);
