@@ -794,6 +794,10 @@ static void main_loop(void) {
       }
       case 1: { /* v0 is float */
         float divisor = (float) NANBOX_INT(v1);
+        if (divisor == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
         float m = fmodf(NANBOX_FLOAT(v0), divisor);
         if (m != 0 && (m < 0) != (divisor < 0)) {
           m += divisor;
@@ -803,6 +807,10 @@ static void main_loop(void) {
       }
       case 2: { /* v1 is float */
         float divisor = NANBOX_FLOAT(v1);
+        if (divisor == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
         float m = fmodf(NANBOX_INT(v0), divisor);
         if (m != 0 && (m < 0) != (divisor < 0)) {
           m += divisor;
@@ -812,6 +820,10 @@ static void main_loop(void) {
       }
       case 3: { /* both are float */
         float divisor = NANBOX_FLOAT(v1);
+        if (divisor == 0) {
+          sifault(pynter_fault_divide_by_zero);
+          return;
+        }
         float m = fmodf(NANBOX_FLOAT(v0), divisor);
         if (m != 0 && (m < 0) != (divisor < 0)) {
           m += divisor;
