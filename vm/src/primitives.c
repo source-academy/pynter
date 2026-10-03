@@ -29,7 +29,8 @@
 /**
  * This file contains the implementations (in C) of all 92 functions in the Source
  * standard library, plus a handful of py-slang (Python frontend) additions
- * appended at the end (see SIVMFN_PRIMITIVE_COUNT in internal_fn.h).
+ * appended at the end (see SIVMFN_PRIMITIVE_COUNT in internal_fn.h). Indices must match
+ * py-slang's PVML primitive table (src/engines/pvml/builtins.ts).
  */
 
 static void debug_display_argv(unsigned int argc, sinanbox_t *argv) {
@@ -2541,9 +2542,40 @@ static sinanbox_t sivmfn_prim_unimpl(uint8_t argc, sinanbox_t *argv) {
   return NANBOX_OFEMPTY();
 }
 
-static sinanbox_t sivmfn_prim_noop(uint8_t argc, sinanbox_t *argv) {
+/**
+ * draw_data(value1, *values): Source Academy draws its arguments as box-and-pointer diagrams; no
+ * Pynter device has a drawing canvas, so this draws nothing and is the identity on its first
+ * argument, like Source's own draw_data (and py-slang's, in every engine). The result is a new
+ * reference: the caller dereferences every argument after the call.
+ */
+static sinanbox_t sivmfn_prim_draw_data(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  siheap_refbox(argv[0]);
+  return argv[0];
+}
+
+/**
+ * breakpoint(), set_timeout(f, t) and clear_all_timeout(): deliberate no-ops returning None. There
+ * is no debugger to stop in, and no event loop to schedule set_timeout's callback on (so the
+ * callback is never run). They still check their arity -- exactly 2 arguments for set_timeout and
+ * none for clear_all_timeout, like py-slang's own stdlib declares -- so a malformed call faults
+ * instead of being silently accepted.
+ */
+static sinanbox_t sivmfn_prim_breakpoint(uint8_t argc, sinanbox_t *argv) {
   (void) argc; (void) argv;
-  return NANBOX_OFUNDEF();
+  return NANBOX_OFNULL();
+}
+
+static sinanbox_t sivmfn_prim_set_timeout(uint8_t argc, sinanbox_t *argv) {
+  (void) argv;
+  CHECK_ARGC_EXACT(2);
+  return NANBOX_OFNULL();
+}
+
+static sinanbox_t sivmfn_prim_clear_all_timeout(uint8_t argc, sinanbox_t *argv) {
+  (void) argv;
+  CHECK_ARGC_EXACT(0);
+  return NANBOX_OFNULL();
 }
 
 sivmfnptr_t sivmfn_primitives[] = {
@@ -2553,7 +2585,7 @@ sivmfnptr_t sivmfn_primitives[] = {
   sivmfn_prim_build_list,
   sivmfn_prim_build_stream,
   sivmfn_prim_display,
-  /* draw_data */ sivmfn_prim_noop, // not supported, obviously
+  /* draw_data */ sivmfn_prim_draw_data,
   sivmfn_prim_enum_list,
   sivmfn_prim_enum_stream,
   sivmfn_prim_equal,
@@ -2693,5 +2725,8 @@ sivmfnptr_t sivmfn_primitives[] = {
   // math.ts; input needs async stdin wiring this VM doesn't have).
   sivmfn_prim_time_time, sivmfn_prim_print_llist, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 126-129
   sivmfn_prim_unimpl, // 130
-  sivmfn_prim_range // 131
+  sivmfn_prim_range, // 131
+  // 132-134: breakpoint, set_timeout, clear_all_timeout -- deliberate no-ops (see
+  // sivmfn_prim_breakpoint above), matching py-slang's PVML table (src/engines/pvml/builtins.ts).
+  sivmfn_prim_breakpoint, sivmfn_prim_set_timeout, sivmfn_prim_clear_all_timeout // 132-134
 };
