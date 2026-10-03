@@ -2557,10 +2557,24 @@ static sinanbox_t sivmfn_prim_draw_data(uint8_t argc, sinanbox_t *argv) {
 /**
  * breakpoint(), set_timeout(f, t) and clear_all_timeout(): deliberate no-ops returning None. There
  * is no debugger to stop in, and no event loop to schedule set_timeout's callback on (so the
- * callback is never run).
+ * callback is never run). They still check their arity -- exactly 2 arguments for set_timeout and
+ * none for clear_all_timeout, like py-slang's own stdlib declares -- so a malformed call faults
+ * instead of being silently accepted.
  */
-static sinanbox_t sivmfn_prim_none(uint8_t argc, sinanbox_t *argv) {
+static sinanbox_t sivmfn_prim_breakpoint(uint8_t argc, sinanbox_t *argv) {
   (void) argc; (void) argv;
+  return NANBOX_OFNULL();
+}
+
+static sinanbox_t sivmfn_prim_set_timeout(uint8_t argc, sinanbox_t *argv) {
+  (void) argv;
+  CHECK_ARGC_EXACT(2);
+  return NANBOX_OFNULL();
+}
+
+static sinanbox_t sivmfn_prim_clear_all_timeout(uint8_t argc, sinanbox_t *argv) {
+  (void) argv;
+  CHECK_ARGC_EXACT(0);
   return NANBOX_OFNULL();
 }
 
@@ -2712,7 +2726,7 @@ sivmfnptr_t sivmfn_primitives[] = {
   sivmfn_prim_time_time, sivmfn_prim_print_llist, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 126-129
   sivmfn_prim_unimpl, // 130
   sivmfn_prim_range, // 131
-  // 132-134: breakpoint, set_timeout, clear_all_timeout -- deliberate no-ops (see sivmfn_prim_none),
-  // matching py-slang's PVML table (src/engines/pvml/builtins.ts).
-  sivmfn_prim_none, sivmfn_prim_none, sivmfn_prim_none // 132-134
+  // 132-134: breakpoint, set_timeout, clear_all_timeout -- deliberate no-ops (see
+  // sivmfn_prim_breakpoint above), matching py-slang's PVML table (src/engines/pvml/builtins.ts).
+  sivmfn_prim_breakpoint, sivmfn_prim_set_timeout, sivmfn_prim_clear_all_timeout // 132-134
 };

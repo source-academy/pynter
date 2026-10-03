@@ -42,7 +42,8 @@ Pynter implements most of Python (SICPy) §3, except:
 - `draw_data(value1, *values)` draws nothing (no Pynter device has a drawing canvas) and returns its
   first argument, like Source Academy's own. `breakpoint()`, `set_timeout(f, t)` and
   `clear_all_timeout()` are deliberate no-ops returning `None`: there is no debugger to stop in and no
-  event loop to schedule a callback on, so `set_timeout`'s callback is never run.
+  event loop to schedule a callback on, so `set_timeout`'s callback is never run. They still check
+  their arity (`set_timeout` takes exactly 2 arguments, `clear_all_timeout` none).
 - The following Python builtins compile successfully but fault at runtime if actually called,
   since their underlying native primitive is an unimplemented stub:
   - `input()` — not a missing feature so much as a genuinely hard one for this VM specifically:
