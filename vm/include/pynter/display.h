@@ -14,7 +14,7 @@
 #define SIVMFN_PRINTFN(v) (_Generic((v), \
   char *: pynter_printer_string, \
   const char *: pynter_printer_string, \
-  float: pynter_printer_float, \
+  sifloat_t: pynter_printer_float, \
   int32_t: pynter_printer_integer))
 #define SIVMFN_PRINT(v, is_error) do { \
   if (SIVMFN_PRINTFN(v)) SIVMFN_PRINTFN(v)((v), (is_error)); \
@@ -37,9 +37,9 @@
  * that way here specifically, unlike this VM's other (lowercase, printf-
  * default) NaN/inf handling for plain floats.
  */
-PYNTER_INLINEIFC void sidisplay_complex_component(char *buf, size_t bufsize, float v);
+PYNTER_INLINEIFC void sidisplay_complex_component(char *buf, size_t bufsize, sifloat_t v);
 #ifndef __cplusplus
-PYNTER_INLINEIFC void sidisplay_complex_component(char *buf, size_t bufsize, float v) {
+PYNTER_INLINEIFC void sidisplay_complex_component(char *buf, size_t bufsize, sifloat_t v) {
   // Deliberately not isnan()/isinf(): on some libcs (e.g. emscripten's) they
   // expand to calls to `static` helpers, which this function -- an
   // extern-linkage `inline` per the PYNTER_INLINEIFC/inline.c scheme, like
@@ -160,15 +160,15 @@ PYNTER_INLINEIFC void sidisplay_nanbox(sinanbox_t v, bool is_error) {
         siheap_complex_t *c = (siheap_complex_t *) obj;
         char real_buf[32], imag_buf[32], buf[80];
         sidisplay_complex_component(imag_buf, sizeof(imag_buf), c->imag);
-        if (c->real == 0.0f) {
+        if (c->real == 0.0) {
           snprintf(buf, sizeof(buf), "%sj", imag_buf);
         } else {
           sidisplay_complex_component(real_buf, sizeof(real_buf), c->real);
           // c->imag != c->imag (not isnan(), see sidisplay_complex_component's
-          // own comment above) is true only for NaN; `>= 0.0f` alone is false
+          // own comment above) is true only for NaN; `>= 0.0` alone is false
           // for NaN, which would otherwise omit the separator ("1NaNj",
           // unparseable) instead of "1+NaNj".
-          bool imag_nonneg_or_nan = c->imag >= 0.0f || c->imag != c->imag;
+          bool imag_nonneg_or_nan = c->imag >= 0.0 || c->imag != c->imag;
           snprintf(buf, sizeof(buf), "%s%s%sj", real_buf, (imag_nonneg_or_nan ? "+" : ""), imag_buf);
         }
         SIVMFN_PRINT(buf, is_error);

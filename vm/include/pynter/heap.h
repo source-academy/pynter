@@ -34,8 +34,25 @@ typedef enum __attribute__((__packed__)) {
 } siheap_type_t;
 _Static_assert(sizeof(siheap_type_t) == 1, "siheap_type_t wider than needed");
 
+/**
+ * The alignment of every heap block, and thus of every heap object.
+ *
+ * With 64-bit NaN-boxing, NaN-boxes and doubles live inside heap objects, and
+ * some CPUs (e.g. the ARM9 of the EV3) fault or are slow on an unaligned
+ * 8-byte access. So all heap blocks have a size that is a multiple of 8, and
+ * the heap itself is 8-aligned.
+ */
+#ifdef PYNTER_NANBOX32
+#define SIHEAP_ALIGN 1u
+#else
+#define SIHEAP_ALIGN 8u
+#endif
+#define SIHEAP_ROUNDUP(size) (((size) + (SIHEAP_ALIGN - 1)) & ~((size_t) (SIHEAP_ALIGN - 1)))
+#define SIHEAP_ROUNDDOWN(size) ((size) & ~((size_t) (SIHEAP_ALIGN - 1)))
+
 #ifdef PYNTER_STATIC_HEAP
-extern unsigned char siheap[PYNTER_HEAP_SIZE];
+_Static_assert(PYNTER_HEAP_SIZE % SIHEAP_ALIGN == 0, "PYNTER_HEAP_SIZE must be a multiple of 8");
+extern unsigned char siheap[PYNTER_HEAP_SIZE] __attribute__((aligned(8)));
 #else
 extern unsigned char *siheap;
 extern size_t siheap_size;
@@ -237,9 +254,14 @@ PYNTER_INLINEIFC siheap_header_t *siheap_malloc_split(siheap_free_t *cur, addres
  *
  * The allocation is returned with a reference count of 1.
  */
-PYNTER_INLINE siheap_header_t *siheap_malloc(address_t size, siheap_type_t type) {
+PYNTER_INLINE siheap_header_t *siheap_malloc(size_t size, siheap_type_t type) {
   if (size < sizeof(siheap_free_t)) {
     size = sizeof(siheap_free_t);
+  }
+  size = SIHEAP_ROUNDUP(size);
+  if (size > PYNTER_HEAP_SIZE) {
+    // cannot be satisfied, even by a collection (and would not fit address_t)
+    sifault(pynter_fault_out_of_memory);
   }
 
   siheap_free_t *free_block = siheap_malloc_find(size);
@@ -327,7 +349,7 @@ PYNTER_INLINE siheap_header_t *siheap_mfree(siheap_header_t *ent) {
   return siheap_mfree_inner(ent);
 }
 
-siheap_header_t *siheap_mrealloc(siheap_header_t *ent, address_t newsize);
+siheap_header_t *siheap_mrealloc(siheap_header_t *ent, size_t newsize);
 
 PYNTER_INLINE void siheap_deref(void *vent) {
   assert(vent);

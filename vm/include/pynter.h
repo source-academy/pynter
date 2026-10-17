@@ -5,6 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "pynter/layout.h"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -47,14 +49,23 @@ typedef enum {
   pynter_fault_index_error = 15
 } pynter_fault_t;
 
+/**
+ * The result of a program.
+ *
+ * float_value is a double, and object_value 64 bits wide, with the default
+ * 64-bit NaN-boxing; with PYNTER_NANBOX32, a float and 32 bits (see
+ * layout.h). So, with the default layout, the union starts at offset 8, not 4.
+ * object_value holds the bits of the NaN-box of a heap object (an array,
+ * function or complex number) and is valid until the next run.
+ */
 typedef struct {
   pynter_type_t type;
   union {
     bool boolean_value;
     int32_t integer_value;
-    float float_value;
+    sifloat_t float_value;
     const char *string_value;
-    uint32_t object_value;
+    sinanbox_bits_t object_value;
   };
 } pynter_value_t;
 
@@ -99,7 +110,7 @@ typedef void (*pynter_printfn_integer)(int32_t value, bool is_error);
  *
  * A newline should not be appended by the function.
  */
-typedef void (*pynter_printfn_float)(float value, bool is_error);
+typedef void (*pynter_printfn_float)(sifloat_t value, bool is_error);
 
 /**
  * The type of a printer flush function.

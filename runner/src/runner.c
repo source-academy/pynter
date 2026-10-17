@@ -131,14 +131,15 @@ static void send_display_integer(int32_t v, uint16_t type) {
   free(msg);
 }
 
-static void send_display_float(float v, uint16_t type) {
+static void send_display_float(sifloat_t v, uint16_t type) {
   struct sling_message_display *msg = calloc(1, sizeof(*msg));
   if (!msg) {
     _exit(1);
   }
   msg->display_type = type;
   msg->data_type = pynter_type_float;
-  msg->float32 = v;
+  // the IPC message has a single-precision float, whatever the VM's float is
+  msg->float32 = (float) v;
   send_ipc_raw(msg, sizeof(*msg));
   free(msg);
 }
@@ -206,7 +207,7 @@ static void print_integer(int32_t v, bool is_error) {
   }
 }
 
-static void print_float(float v, bool is_error) {
+static void print_float(sifloat_t v, bool is_error) {
   if (!from_sling) {
     printf("%f", v);
     return;

@@ -77,6 +77,9 @@ the exponent are set, and the mantissa is nonzero. Since there are 23 or 52 bits
 of mantissa in a float and double, respectively, that means there are 24 or 53 bits
 of space in which other values can be stuffed.
 
+By default a NaNbox is 64 bits wide (a double); with `PYNTER_NANBOX32` it is 32 bits
+wide (a float), which is meant for targets with very little RAM.
+
 NaNboxing is made possible by the fact that on many systems, float operations that
 result in a NaN produce only a single "canonical NaN" value which is the NaN with
 only the highest mantissa bit set.
@@ -89,7 +92,7 @@ In Pynter, the following types are stored in NaNboxes:
 - undefined
 - null
 - booleans
-- small integers (-0x100000 &le; x &le; 0xFFFFF)
+- small integers (-0x80000000 &le; x &le; 0x7FFFFFFF; -0x100000 &le; x &le; 0xFFFFF with `PYNTER_NANBOX32`)
 - floats
 - pointers
 - internal function references
@@ -110,12 +113,17 @@ the implementation.
 
 ### Numbers
 
-Pynter numbers are *single-precision `float`s*. This is a deviation from JavaScript
-and Source, but is done in order to maintain good performance on embedded devices,
-which typically do not support double-precision floating point in hardware.
+Pynter numbers are *double-precision `float`s*, like Python's. With `PYNTER_NANBOX32`
+they are *single-precision `float`s* instead, which maintains good performance on embedded
+devices that do not support double-precision floating point in hardware, at the price of
+precision.
 
-Pynter tries to store small integers as integers where possible, as a further
-optimisation.
+Pynter stores integers as integers where possible: Python's `int`s are 32-bit in a NaNbox
+(21-bit with `PYNTER_NANBOX32`), and become floats when an operation overflows (there are no
+arbitrary-precision integers yet).
+
+All heap blocks are 8-byte aligned (with 64-bit NaNboxes), which keeps the values and
+doubles inside heap objects aligned.
 
 ### Strings
 

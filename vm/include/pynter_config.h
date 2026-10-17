@@ -33,18 +33,28 @@
 // #define PYNTER_STATIC_HEAP
 
 /**
- * Set the size of the statically-allocated heap, in bytes. Ignored if PYNTER_STATIC_HEAP
- * is not set. NaN-boxing's 22-bit heap-pointer field imposes a hard ceiling of 0x400000
- * (4 MiB) -- see the README's "Memory configuration" section. Lower this on memory-
- * constrained targets (e.g. Arduino/ESP32).
+ * Set the size of the statically-allocated heap, in bytes, a multiple of 8. Ignored if
+ * PYNTER_STATIC_HEAP is not set. With PYNTER_NANBOX32, NaN-boxing's 22-bit heap-pointer
+ * field imposes a hard ceiling of 0x400000 (4 MiB) -- see the README's "Memory
+ * configuration" section. Lower this on memory-constrained targets (e.g. Arduino/ESP32).
  *
- * Defaults to 0x39999a (3.6 MiB).
+ * Defaults to 0x399998 (3.6 MiB).
  */
-// #define PYNTER_HEAP_SIZE 0x39999a
+// #define PYNTER_HEAP_SIZE 0x399998
+
+/**
+ * Use the compact 32-bit NaN-box: single-precision floats, 21-bit small integers and
+ * a heap of at most 4 MiB, with values of 4 bytes. Otherwise values are 64-bit NaN-boxes,
+ * with double-precision floats, 32-bit small integers and a heap of up to 4 GiB, and
+ * values of 8 bytes. See the README's "Value layout" section.
+ *
+ * Defined automatically on AVR (Arduino). Off elsewhere by default.
+ */
+// #define PYNTER_NANBOX32
 
 /**
  * Set the number of entries of the statically-allocated stack, in entries.
- * Each entry is 4 bytes.
+ * Each entry is 8 bytes (4 bytes with PYNTER_NANBOX32).
  *
  * Defaults to 0x200.
  */

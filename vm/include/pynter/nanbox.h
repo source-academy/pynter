@@ -7,9 +7,12 @@
 #include <math.h>
 
 #include "fault.h"
+#include "layout.h"
+
+#ifdef PYNTER_NANBOX32
 
 /**
- * Pynter 32-bit NaN-box
+ * Pynter 32-bit NaN-box (PYNTER_NANBOX32)
  *
  * In a 32-bit float, a NaN is any value which has the 8 exponent bits set and
  * a nonzero mantissa field. Normal float operations only produce the canonical
@@ -60,14 +63,14 @@ union
 sinanbox_t
 #endif
 {
-  float as_float;
-  uint32_t as_u32;
+  sifloat_t as_float;
+  uint32_t as_bits;
 
 #ifdef __cplusplus
   // The dummy 2nd argument is to avoid any type-promotion shenanigans
-  constexpr sinanbox_t(uint32_t i, uint32_t) : as_u32(i) {}
+  constexpr sinanbox_t(uint32_t i, uint32_t) : as_bits(i) {}
 
-  constexpr sinanbox_t(float f) : as_float(f) {}
+  constexpr sinanbox_t(sifloat_t f) : as_float(f) {}
 #endif
 }
 #ifndef __cplusplus
@@ -75,6 +78,60 @@ sinanbox_t
 #endif
 ;
 _Static_assert(sizeof(sinanbox_t) == 4, "sinanbox_t has wrong size");
+
+#else
+
+/**
+ * Pynter 64-bit NaN-box (the default)
+ *
+ * A value is 64 bits wide: either a double-precision float, or a NaN whose top
+ * 16 bits are a type tag and whose low 32 bits are a payload.
+ *
+ * Every double that is not a NaN, and the canonical NaN 0x7ff8000000000000,
+ * is a float. All other NaNs are free for other uses. We take the ones with
+ * the sign bit set and a tag from 0xfff9 on, which no floating-point operation
+ * produces (the NaN that the hardware makes, e.g. for inf - inf, is 0x7ff8... on
+ * ARM and wasm and 0xfff8... on x86; NANBOX_OFFLOAT canonicalizes it anyway):
+ *
+ * - empty:     0xfff9000000000000
+ * - undefined: 0xfffa000000000000
+ * - null:      0xfffb000000000000
+ * - false:     0xfffc000000000000, true: 0xfffc000000000001
+ * - integers:  0xfffd0000_xxxxxxxx, xxxxxxxx being a 32-bit two's complement integer
+ * - heap pointers: 0xfffe0000_xxxxxxxx, xxxxxxxx being a byte offset into the heap
+ * - primitive function objects: 0xffff0000_000000xx
+ * - vm-internal function objects: 0xffff0000_000001xx
+ *
+ * Thus a value is a float if it is below 0xfff9000000000000 (unsigned), and
+ * otherwise its type is its top 16 bits.
+ */
+#ifndef __cplusplus
+typedef
+#endif
+union
+#ifdef __cplusplus
+sinanbox_t
+#endif
+{
+  sifloat_t as_float;
+  uint64_t as_bits;
+
+#ifdef __cplusplus
+  // The dummy 2nd argument is to avoid any type-promotion shenanigans
+  constexpr sinanbox_t(uint64_t i, uint32_t) : as_bits(i) {}
+
+  constexpr sinanbox_t(sifloat_t f) : as_float(f) {}
+#endif
+}
+#ifndef __cplusplus
+sinanbox_t
+#endif
+;
+_Static_assert(sizeof(sinanbox_t) == 8, "sinanbox_t has wrong size");
+
+#endif
+
+#ifdef PYNTER_NANBOX32
 
 #define NANBOX_TYPEMASK 0xfff00000u
 #define NANBOX_TEMPTY 0x7f900000u
@@ -88,84 +145,136 @@ _Static_assert(sizeof(sinanbox_t) == 4, "sinanbox_t has wrong size");
 #define NANBOX_CASES_TINT case NANBOX_TINT: case 0x7ff00000u:
 #define NANBOX_CASES_TPTR case NANBOX_TPTR: case 0xffd00000u: \
   case 0xffe00000u: case 0xfff00000u:
-#define NANBOX_GETTYPE(val) ((val).as_u32 & NANBOX_TYPEMASK)
 
-#define NANBOX_ISFLOAT(val) (nanbox_isfloat(val))
-#define NANBOX_ISEMPTY(val) ((val).as_u32 == NANBOX_TEMPTY)
-#define NANBOX_ISUNDEF(val) ((val).as_u32 == NANBOX_TUNDEF)
-#define NANBOX_ISNULL(val) ((val).as_u32 == NANBOX_TNULL)
-#define NANBOX_ISBOOL(val) (NANBOX_GETTYPE(val) == NANBOX_TBOOL)
-#define NANBOX_ISINT(val) (((val).as_u32 & NANBOX_TINT) == NANBOX_TINT)
-#define NANBOX_ISPTR(val) (((val).as_u32 & NANBOX_TPTR) == NANBOX_TPTR)
-#define NANBOX_ISIFN(val) (NANBOX_GETTYPE(val) == NANBOX_TIFN)
-#define NANBOX_ISNUMERIC(val) (NANBOX_ISFLOAT(val) || NANBOX_ISINT(val))
+#define NANBOX_ISINT(val) (((val).as_bits & NANBOX_TINT) == NANBOX_TINT)
+#define NANBOX_ISPTR(val) (((val).as_bits & NANBOX_TPTR) == NANBOX_TPTR)
 
-#define NANBOX_FLOAT(val) ((val).as_float)
-#define NANBOX_BOOL(val) ((val).as_u32 & 1u)
 #ifdef __cplusplus
 inline int32_t nanbox_int(sinanbox_t val) {
-  struct { int32_t n : 21; } v = { static_cast<int32_t>(val.as_u32) };
+  struct { int32_t n : 21; } v = { static_cast<int32_t>(val.as_bits) };
   return v.n;
 }
 #define NANBOX_INT(val) (nanbox_int((val)))
 #else
-#define NANBOX_INT(val) (((struct { int32_t n : 21; }) { .n = (val).as_u32 }).n)
+#define NANBOX_INT(val) (((struct { int32_t n : 21; }) { .n = (val).as_bits }).n)
 #endif
-#define NANBOX_PTR(val) ((val).as_u32 & 0x3fffffu)
+#define NANBOX_PTR(val) ((val).as_bits & 0x3fffffu)
+
+#define NANBOX_OFINT(val) (NANBOX_WITH_BITS(((val) & 0x1fffffu) | NANBOX_TINT))
+#define NANBOX_OFPTR(val) (NANBOX_WITH_BITS(((val) & 0x3fffffu) | NANBOX_TPTR))
+
+/** The range of a small integer. */
+#define NANBOX_INTMAX 0xFFFFF
+#define NANBOX_INTMIN (-0x100000)
+
+#define NANBOX_CANONICAL_NAN (NANBOX_WITH_BITS(0x7FC00000u))
+
+#else
+
+#define NANBOX_TYPEMASK UINT64_C(0xffff000000000000)
+#define NANBOX_TEMPTY UINT64_C(0xfff9000000000000)
+#define NANBOX_TUNDEF UINT64_C(0xfffa000000000000)
+#define NANBOX_TNULL UINT64_C(0xfffb000000000000)
+#define NANBOX_TBOOL UINT64_C(0xfffc000000000000)
+#define NANBOX_TINT UINT64_C(0xfffd000000000000)
+#define NANBOX_TPTR UINT64_C(0xfffe000000000000)
+#define NANBOX_TIFN UINT64_C(0xffff000000000000)
+
+#define NANBOX_CASES_TINT case NANBOX_TINT:
+#define NANBOX_CASES_TPTR case NANBOX_TPTR:
+
+#define NANBOX_ISINT(val) (NANBOX_GETTYPE(val) == NANBOX_TINT)
+#define NANBOX_ISPTR(val) (NANBOX_GETTYPE(val) == NANBOX_TPTR)
+
+#define NANBOX_INT(val) ((int32_t) (uint32_t) (val).as_bits)
+#define NANBOX_PTR(val) ((uint32_t) (val).as_bits)
+
+#define NANBOX_OFINT(val) (NANBOX_WITH_BITS(NANBOX_TINT | (uint32_t) (val)))
+#define NANBOX_OFPTR(val) (NANBOX_WITH_BITS(NANBOX_TPTR | (uint32_t) (val)))
+
+/** The range of a small integer. */
+#define NANBOX_INTMAX INT32_MAX
+#define NANBOX_INTMIN INT32_MIN
+
+#define NANBOX_CANONICAL_NAN (NANBOX_WITH_BITS(UINT64_C(0x7ff8000000000000)))
+
+#endif
+
+#define NANBOX_GETTYPE(val) ((val).as_bits & NANBOX_TYPEMASK)
+
+#define NANBOX_ISFLOAT(val) (nanbox_isfloat(val))
+#define NANBOX_ISEMPTY(val) ((val).as_bits == NANBOX_TEMPTY)
+#define NANBOX_ISUNDEF(val) ((val).as_bits == NANBOX_TUNDEF)
+#define NANBOX_ISNULL(val) ((val).as_bits == NANBOX_TNULL)
+#define NANBOX_ISBOOL(val) (NANBOX_GETTYPE(val) == NANBOX_TBOOL)
+#define NANBOX_ISIFN(val) (NANBOX_GETTYPE(val) == NANBOX_TIFN)
+#define NANBOX_ISNUMERIC(val) (NANBOX_ISFLOAT(val) || NANBOX_ISINT(val))
+
+#define NANBOX_FLOAT(val) ((val).as_float)
+#define NANBOX_BOOL(val) ((uint32_t) ((val).as_bits & 1u))
 #define NANBOX_TOFLOAT(val) (nanbox_tofloat((val)))
 #define NANBOX_TOI32(val) (nanbox_toi32((val)))
 #define NANBOX_TOU32(val) (nanbox_tou32((val)))
 
-#define NANBOX_IFN_TYPE(val) (((val).as_u32 & 0x100) >> 8)
-#define NANBOX_IFN_NUMBER(val) ((val).as_u32 & 0xff)
+#define NANBOX_IFN_TYPE(val) ((uint32_t) (((val).as_bits & 0x100) >> 8))
+#define NANBOX_IFN_NUMBER(val) ((uint32_t) ((val).as_bits & 0xff))
+
+/**
+ * The bits of a NaN-box, as an integer wide enough for the layout. It is what
+ * crosses interfaces that don't know the layout (pynter_value_t's
+ * object_value).
+ */
+#define NANBOX_BITS(val) ((val).as_bits)
 
 #ifdef __cplusplus
-#define NANBOX_WITH_I32(i) (sinanbox_t(i, 0u))
+#define NANBOX_WITH_BITS(i) (sinanbox_t(i, 0u))
 #define NANBOX_OFFLOAT(f) (sinanbox_t(f))
+#define NANBOX_OFFLOAT_NOTNAN(f) (sinanbox_t(f))
 #else
-#define NANBOX_WITH_I32(i) ((sinanbox_t) { .as_u32 = (i) })
-#define NANBOX_OFFLOAT(val) (isnan((float)(val)) ? (NANBOX_CANONICAL_NAN) : ((sinanbox_t) { .as_float = (val) }))
+#define NANBOX_WITH_BITS(i) ((sinanbox_t) { .as_bits = (i) })
+#define NANBOX_OFFLOAT(val) (isnan((sifloat_t)(val)) ? (NANBOX_CANONICAL_NAN) : ((sinanbox_t) { .as_float = (val) }))
+// For a float that is known not to be NaN, and in functions with external
+// linkage: isnan() isn't allowed in those with some libcs (e.g. Emscripten's),
+// where it expands to calls to static helpers.
+#define NANBOX_OFFLOAT_NOTNAN(val) ((sinanbox_t) { .as_float = (val) })
 #endif
 
-#define NANBOX_OFEMPTY() (NANBOX_WITH_I32(NANBOX_TEMPTY))
-#define NANBOX_OFUNDEF() (NANBOX_WITH_I32(NANBOX_TUNDEF))
-#define NANBOX_OFNULL() (NANBOX_WITH_I32(NANBOX_TNULL))
-#define NANBOX_OFBOOL(val) (NANBOX_WITH_I32(((unsigned int) !!(val)) | NANBOX_TBOOL))
-/**
- * Creates a NaN-box of an integer.
+#define NANBOX_OFEMPTY() (NANBOX_WITH_BITS(NANBOX_TEMPTY))
+#define NANBOX_OFUNDEF() (NANBOX_WITH_BITS(NANBOX_TUNDEF))
+#define NANBOX_OFNULL() (NANBOX_WITH_BITS(NANBOX_TNULL))
+#define NANBOX_OFBOOL(val) (NANBOX_WITH_BITS(((unsigned int) !!(val)) | NANBOX_TBOOL))
+/*
+ * NANBOX_OFINT(val) creates a NaN-box of an integer.
  *
- * Note: the value MUST be within range, or will be wrapped around.
+ * Note: the value MUST be within range (NANBOX_INTMIN to NANBOX_INTMAX), or
+ * will be wrapped around.
  *
  * Use NANBOX_WRAP_INT if it may not be within range.
+ *
+ * NANBOX_OFPTR(val) creates a NaN-box of a heap offset.
  */
-#define NANBOX_OFINT(val) (NANBOX_WITH_I32(((val) & 0x1fffffu) | NANBOX_TINT))
-#define NANBOX_OFPTR(val) (NANBOX_WITH_I32(((val) & 0x3fffffu) | NANBOX_TPTR))
-#define NANBOX_WRAP_INT(v) (((v) >= NANBOX_INTMIN && (v) <= NANBOX_INTMAX) ? \
-  NANBOX_OFINT(v) : NANBOX_OFFLOAT(v))
-#define NANBOX_WRAP_UINT(v) (((v) <= NANBOX_INTMAX) ? \
-  NANBOX_OFINT(v) : NANBOX_OFFLOAT(v))
 
-#define NANBOX_OFIFN_PRIMITIVE(number) (NANBOX_WITH_I32(NANBOX_TIFN | (number)))
-#define NANBOX_OFIFN_VM(number) (NANBOX_WITH_I32(NANBOX_TIFN | 0x100 | (number)))
+#define NANBOX_OFIFN_PRIMITIVE(number) (NANBOX_WITH_BITS(NANBOX_TIFN | (number)))
+#define NANBOX_OFIFN_VM(number) (NANBOX_WITH_BITS(NANBOX_TIFN | 0x100 | (number)))
 
-#define NANBOX_INTMAX 0xFFFFF
-#define NANBOX_INTMIN (-0x100000)
-
-#define NANBOX_CANONICAL_NAN (NANBOX_WITH_I32(0x7FC00000u))
-#define NANBOX_IDENTICAL(v0, v1) ((v0).as_u32 == (v1).as_u32)
+#define NANBOX_IDENTICAL(v0, v1) ((v0).as_bits == (v1).as_bits)
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 PYNTER_INLINE _Bool nanbox_isfloat(sinanbox_t v) {
-  uint32_t i = v.as_u32;
+#ifdef PYNTER_NANBOX32
+  uint32_t i = v.as_bits;
   return ((i & 0x7f800000) != 0x7f800000) || ((i & 0x7fffff) == 0) || i == 0x7fc00000;
+#else
+  return v.as_bits < NANBOX_TEMPTY;
+#endif
 }
 
-PYNTER_INLINE float nanbox_tofloat(sinanbox_t v) {
+PYNTER_INLINE sifloat_t nanbox_tofloat(sinanbox_t v) {
   if (NANBOX_ISINT(v)) {
-    return (float) NANBOX_INT(v);
+    return (sifloat_t) NANBOX_INT(v);
   } else if (NANBOX_ISFLOAT(v)) {
     return NANBOX_FLOAT(v);
   } else {
@@ -197,5 +306,29 @@ PYNTER_INLINE int32_t nanbox_toi32(sinanbox_t v) {
 #ifdef __cplusplus
 }
 #endif
+
+// (outside of the extern "C" block: they return an sinanbox_t, which isn't a C
+// type in C++)
+/**
+ * Creates a NaN-box of an integer, which becomes a float if it is out of
+ * range of a small integer.
+ */
+PYNTER_INLINE sinanbox_t nanbox_wrap_int(int64_t v) {
+  if (v >= NANBOX_INTMIN && v <= NANBOX_INTMAX) {
+    return NANBOX_OFINT(v);
+  }
+  return NANBOX_OFFLOAT_NOTNAN((sifloat_t) v);
+}
+
+/** The unsigned version of nanbox_wrap_int. */
+PYNTER_INLINE sinanbox_t nanbox_wrap_uint(uint64_t v) {
+  if (v <= (uint64_t) NANBOX_INTMAX) {
+    return NANBOX_OFINT(v);
+  }
+  return NANBOX_OFFLOAT_NOTNAN((sifloat_t) v);
+}
+
+#define NANBOX_WRAP_INT(v) (nanbox_wrap_int(v))
+#define NANBOX_WRAP_UINT(v) (nanbox_wrap_uint(v))
 
 #endif

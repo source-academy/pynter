@@ -237,9 +237,9 @@ static sinanbox_t ev3_pause(uint8_t argc, sinanbox_t *argv) {
     int32_t ms = NANBOX_INT(argv[0]);
     nanosleep(&(struct timespec){.tv_sec = ms / 1000, .tv_nsec = (ms % 1000) * 1000000}, NULL);
   } else if (NANBOX_ISFLOAT(argv[0])) {
-    float ms = NANBOX_FLOAT(argv[0]);
+    sifloat_t ms = NANBOX_FLOAT(argv[0]);
     nanosleep(&(struct timespec){.tv_sec = (time_t)(ms / 1000.0),
-                                 .tv_nsec = (long)(fmodf(ms, 1000.0) * 1000000.0)},
+                                 .tv_nsec = (long)(SIFL(fmod)(ms, 1000.0) * 1000000.0)},
               NULL);
   }
 

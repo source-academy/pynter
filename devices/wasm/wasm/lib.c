@@ -46,7 +46,7 @@ static const char *type_names[] = {
 
 void display_object_result(pynter_value_t *res, _Bool is_error) {
   if (res->type == pynter_type_array || res->type == pynter_type_function || res->type == pynter_type_complex) {
-    sinanbox_t arr = NANBOX_WITH_I32(res->object_value);
+    sinanbox_t arr = NANBOX_WITH_BITS(res->object_value);
     sidisplay_nanbox(arr, is_error);
   }
 }
@@ -59,7 +59,7 @@ static void print_integer(int32_t v, bool is_error) {
   fprintf(is_error ? stderr : stdout, "%d", v);
 }
 
-static void print_float(float v, bool is_error) {
+static void print_float(sifloat_t v, bool is_error) {
   fprintf(is_error ? stderr : stdout, "%f", v);
 }
 
@@ -93,13 +93,24 @@ void siwasm_free(void *ptr) {
 }
 
 // Backs the pointer siwasm_run() returns: JS-side callers (see py-slang's
-// pynter-wasm.ts) read the result directly out of WASM memory as an 8-byte
-// {type: u32, value: 4 bytes} struct, which is exactly pynter_value_t's
-// layout on wasm32. Static (not stack-local) so the pointer stays valid
+// pynter-wasm.ts) read the result directly out of WASM memory as a struct
+// that is exactly pynter_value_t's layout on wasm32: with the default 64-bit
+// NaN-boxing 16 bytes, {type: u32, padding: 4 bytes, value: 8 bytes} (a
+// float is an f64 and an object the 64 bits of a NaN-box); with
+// PYNTER_NANBOX32 8 bytes, {type: u32, value: 4 bytes}. Static (not stack-local) so the pointer stays valid
 // after this function returns; zeroed on every call so a faulting run
 // deterministically reports type 0 ("unknown"/no result) rather than
 // leftover data from a previous run.
 static pynter_value_t wasm_result;
+
+// The layout JS-side callers rely on.
+#ifdef PYNTER_NANBOX32
+_Static_assert(sizeof(pynter_value_t) == 8 && offsetof(pynter_value_t, integer_value) == 4,
+  "unexpected layout of pynter_value_t");
+#else
+_Static_assert(sizeof(pynter_value_t) == 16 && offsetof(pynter_value_t, integer_value) == 8,
+  "unexpected layout of pynter_value_t");
+#endif
 
 EMSCRIPTEN_KEEPALIVE
 pynter_value_t *siwasm_run(unsigned char *code, size_t code_size) {

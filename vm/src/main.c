@@ -48,7 +48,7 @@ static void set_result(sinanbox_t exec_result, pynter_value_t *result) {
     break;
   case NANBOX_TIFN:
     result->type = pynter_type_function;
-    result->object_value = exec_result.as_u32;
+    result->object_value = NANBOX_BITS(exec_result);
     break;
   NANBOX_CASES_TPTR {
     siheap_header_t *obj = SIHEAP_NANBOXTOPTR(exec_result);
@@ -62,15 +62,15 @@ static void set_result(sinanbox_t exec_result, pynter_value_t *result) {
     case sitype_intcont:
     case sitype_function:
       result->type = pynter_type_function;
-      result->object_value = exec_result.as_u32;
+      result->object_value = NANBOX_BITS(exec_result);
       break;
     case sitype_array:
       result->type = pynter_type_array;
-      result->object_value = exec_result.as_u32;
+      result->object_value = NANBOX_BITS(exec_result);
       break;
     case sitype_complex:
       result->type = pynter_type_complex;
-      result->object_value = exec_result.as_u32;
+      result->object_value = NANBOX_BITS(exec_result);
       break;
     case sitype_array_data:
     case sitype_empty:
@@ -89,7 +89,7 @@ static void set_result(sinanbox_t exec_result, pynter_value_t *result) {
       result->type = pynter_type_float;
       result->float_value = NANBOX_FLOAT(exec_result);
     } else {
-      SIBUGV("Unexpected NaNbox: %08x\n", exec_result.as_u32);
+      SIBUGV("Unexpected NaNbox: " SINANBOX_BITS_FMT "\n", NANBOX_BITS(exec_result));
     }
     break;
   }
@@ -134,8 +134,27 @@ void pynter_setup_heap(void *heap, size_t size) {
 (void) heap; (void) size;
 return;
 #else
-  siheap = heap;
-  siheap_size = size;
+  // The heap must be 8-aligned (see SIHEAP_ALIGN), and no larger than the
+  // heap offset in a NaN-box can address.
+  const size_t misalignment = ((uintptr_t) heap) % SIHEAP_ALIGN;
+  const size_t adjust = misalignment ? SIHEAP_ALIGN - misalignment : 0;
+  if (!heap || size < adjust) {
+    siheap = NULL;
+    siheap_size = 0;
+    return;
+  }
+  size -= adjust;
+#ifdef PYNTER_NANBOX32
+  if (size > 0x400000u) {
+    size = 0x400000u;
+  }
+#else
+  if (size > UINT32_MAX) {
+    size = UINT32_MAX;
+  }
+#endif
+  siheap = ((unsigned char *) heap) + adjust;
+  siheap_size = SIHEAP_ROUNDDOWN(size);
 #endif
 }
 

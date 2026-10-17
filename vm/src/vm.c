@@ -66,10 +66,10 @@ static inline bool sivm_is_complex(sinanbox_t v) {
  * its operands before calling sivm_equal, so by the time this runs there a
  * bool has already become a plain int.
  */
-static inline bool sivm_numeric_to_complex_parts(sinanbox_t v, float *out_real, float *out_imag) {
+static inline bool sivm_numeric_to_complex_parts(sinanbox_t v, sifloat_t *out_real, sifloat_t *out_imag) {
   if (NANBOX_ISNUMERIC(v)) {
     *out_real = NANBOX_TOFLOAT(v);
-    *out_imag = 0.0f;
+    *out_imag = 0.0;
     return true;
   }
   if (sivm_is_complex(v)) {
@@ -81,7 +81,7 @@ static inline bool sivm_numeric_to_complex_parts(sinanbox_t v, float *out_real, 
   return false;
 }
 
-static inline void sivm_push_complex_result(float real, float imag) {
+static inline void sivm_push_complex_result(sifloat_t real, sifloat_t imag) {
   siheap_complex_t *result = sicomplex_new(real, imag);
   sistack_push(SIHEAP_PTRTONANBOX(result));
 }
@@ -106,7 +106,7 @@ bool sivm_equal(sinanbox_t l, sinanbox_t r) {
     // with the same real part and zero imaginary part (component-wise,
     // matching PyComplexNumber.equals() in py-slang's value-types.ts) —
     // covers complex==complex and complex==int/float either way round.
-    float lr, li, rr, ri;
+    sifloat_t lr, li, rr, ri;
     if (!sivm_numeric_to_complex_parts(l, &lr, &li) || !sivm_numeric_to_complex_parts(r, &rr, &ri)) {
       return false;
     }
@@ -336,6 +336,51 @@ static inline bool do_internal_function(
 #define ADVANCE_PCONE() sistate.pc += sizeof(opcode_t); continue
 #define ADVANCE_PCI() sistate.pc += sizeof(*instr); continue
 
+#ifdef PYNTER_SHORT_DOUBLE_WORKAROUND
+/**
+ * For systems (e.g. Arduino AVR) where double is actually an alias of float:
+ * manually converts the bits of an IEEE 754 double into a float.
+ */
+static float sivm_float_of_f64_bits(uint64_t bits) {
+  union {
+    float value;
+    uint32_t bits;
+  } float_value;
+  _Static_assert(sizeof(float_value) == 4, "union of float and uint32_t is not 32-bit");
+
+  float_value.bits = 0;
+  // sign bit
+  if (bits & (((uint64_t)1) << 63)) {
+    float_value.bits |= ((uint32_t)1) << 31;
+  }
+
+  const uint32_t offset_exponent = (bits >> 52) & 0x7FFu;
+  const int32_t real_exponent = ((int32_t)offset_exponent) - 1023;
+  const uint64_t f64_mantissa = bits & 0xFFFFFFFFFFFFFu;
+  // lop off the bottom 29 bits..
+  const uint32_t f32_mantissa = (bits >> 29) & 0x7FFFFFu;
+  if (offset_exponent == 0x7FF) {
+    // NaN or infinity
+    // set all the exponent bits
+    float_value.bits |= 0x7F800000u;
+    if (f64_mantissa) {
+      // NaN, just set this to canonical NaN
+      float_value.bits = 0x7FC00000u;
+    }
+  } else if (offset_exponent == 0) {
+    // f64 zero/subnormal: far below the f32 range, so a signed zero
+  } else if (real_exponent >= -126 && real_exponent <= 127) {
+    float_value.bits |= (real_exponent + 127) << 23;
+    float_value.bits |= f32_mantissa;
+  } else if (real_exponent < -126) {
+    // underflow (flushes f32 subnormals to zero); keeps the sign bit
+  } else {
+    float_value.bits |= 0x7F800000u; // overflow: signed infinity
+  }
+  return float_value.value;
+}
+#endif
+
 /**
  * Runs the main interpreter loop.
  */
@@ -384,47 +429,9 @@ static void main_loop(void) {
     case op_lgc_f64: {
       DECLOPSTRUCT(op_f64);
 #ifdef PYNTER_SHORT_DOUBLE_WORKAROUND
-      // for systems (e.g. Arduino AVR) where double is actually an alias of float...
-      // manually convert the double into a float
-      union {
-        float value;
-        uint32_t bits;
-      } float_value;
-      _Static_assert(sizeof(float_value) == 4, "union of float and uint32_t is not 32-bit");
-
-      float_value.bits = 0;
-      // sign bit
-      if (instr->operand_u64 & (((uint64_t)1) << 63)) {
-        float_value.bits |= ((uint32_t)1) << 31;
-      }
-
-      const uint32_t offset_exponent = (instr->operand_u64 >> 52) & 0x7FFu;
-      const int32_t real_exponent = ((int32_t)offset_exponent) - 1023;
-      const uint64_t f64_mantissa = instr->operand_u64 & 0xFFFFFFFFFFFFFu;
-      // lop off the bottom 29 bits..
-      const uint32_t f32_mantissa = (instr->operand_u64 >> 29) & 0x7FFFFFu;
-      if (offset_exponent == 0x7FF) {
-        // NaN or infinity
-        // set all the exponent bits
-        float_value.bits |= 0x7F800000u;
-        if (f64_mantissa) {
-          // NaN, just set this to canonical NaN
-          float_value.bits = 0x7FC00000u;
-        }
-      } else if (offset_exponent == 0) {
-        // zero/subnormal
-        float_value.bits |= f32_mantissa;
-      } else if (real_exponent >= -126 && real_exponent <= 127) {
-        float_value.bits |= (real_exponent + 127) << 23;
-        float_value.bits |= f32_mantissa;
-      } else if (real_exponent < -126) {
-        float_value.value = -INFINITY;
-      } else if (real_exponent > 127) {
-        float_value.value = INFINITY;
-      }
-      sistack_push(NANBOX_OFFLOAT(float_value.value));
+      sistack_push(NANBOX_OFFLOAT(sivm_float_of_f64_bits(instr->operand_u64)));
 #else
-      sistack_push(NANBOX_OFFLOAT((float)instr->operand));
+      sistack_push(NANBOX_OFFLOAT((sifloat_t)instr->operand));
 #endif
       ADVANCE_PCI();
     }
@@ -451,7 +458,12 @@ static void main_loop(void) {
     }
     case op_lgc_c: {
       DECLOPSTRUCT(op_complex);
-      siheap_complex_t *obj = sicomplex_new(instr->real, instr->imag);
+#ifdef PYNTER_SHORT_DOUBLE_WORKAROUND
+      siheap_complex_t *obj = sicomplex_new(
+        sivm_float_of_f64_bits(instr->real_u64), sivm_float_of_f64_bits(instr->imag_u64));
+#else
+      siheap_complex_t *obj = sicomplex_new((sifloat_t) instr->real, (sifloat_t) instr->imag);
+#endif
       sistack_push(SIHEAP_PTRTONANBOX(obj));
       ADVANCE_PCI();
     }
@@ -476,8 +488,8 @@ static void main_loop(void) {
       if (NANBOX_ISNUMERIC(v0) && NANBOX_ISNUMERIC(v1)) {
         switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
         case 0: /* neither are floats */
-          /* addition/subtraction of 2 21-bit integers won't overflow a 32-bit integer; no worries here */
-          r = NANBOX_WRAP_INT(NANBOX_INT(v0) + NANBOX_INT(v1));
+          /* the sum of 2 small integers can overflow their type, use int64 instead */
+          r = NANBOX_WRAP_INT(((int64_t) NANBOX_INT(v0)) + ((int64_t) NANBOX_INT(v1)));
           break;
         case 1: /* v0 is float */
           r = NANBOX_OFFLOAT(NANBOX_FLOAT(v0) + NANBOX_INT(v1));
@@ -494,7 +506,7 @@ static void main_loop(void) {
           break;
         }
       } else if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
-        float r0, i0, r1, i1;
+        sifloat_t r0, i0, r1, i1;
         if (!sivm_numeric_to_complex_parts(v0, &r0, &i0) || !sivm_numeric_to_complex_parts(v1, &r1, &i1)) {
           SIDEBUG("Invalid operands to add.\n");
           sifault(pynter_fault_type);
@@ -546,7 +558,7 @@ static void main_loop(void) {
       // this branch gets a chance to run (same pattern as op_mul_g's list-
       // repetition special case above).
       if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
-        float r0, i0, r1, i1;
+        sifloat_t r0, i0, r1, i1;
         if (!sivm_numeric_to_complex_parts(v0, &r0, &i0) || !sivm_numeric_to_complex_parts(v1, &r1, &i1)) {
           sifault(pynter_fault_type);
           return;
@@ -561,8 +573,8 @@ static void main_loop(void) {
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
       case 0: /* neither are floats */
-        /* addition/subtraction of 2 21-bit integers won't overflow a 32-bit integer; no worries here */
-        r = NANBOX_WRAP_INT(NANBOX_INT(v0) - NANBOX_INT(v1));
+        /* the difference of 2 small integers can overflow their type, use int64 instead */
+        r = NANBOX_WRAP_INT(((int64_t) NANBOX_INT(v0)) - ((int64_t) NANBOX_INT(v1)));
         break;
       case 1: /* v0 is float */
         r = NANBOX_OFFLOAT(NANBOX_FLOAT(v0) - NANBOX_INT(v1));
@@ -609,8 +621,8 @@ static void main_loop(void) {
         siheap_array_t *src = (siheap_array_t *) SIHEAP_NANBOXTOPTR(v0_is_array ? v0 : v1);
         int32_t n = NANBOX_INT(v0_is_array ? v1 : v0);
         address_t srclen = src->count;
-        // n and srclen are each individually bounded by NANBOX_INTMAX, but
-        // their product isn't -- computed in uint64_t first so an
+        // n and srclen are each individually bounded (by NANBOX_INTMAX and
+        // the heap size), but their product isn't -- computed in uint64_t first so an
         // unreasonably large repeat count/list can't silently wrap the
         // 32-bit address_t result into a too-small allocation.
         uint64_t newlen64 = n > 0 ? (uint64_t) n * srclen : 0;
@@ -636,7 +648,7 @@ static void main_loop(void) {
       // Complex multiplication — same "check before ARITHMETIC_TYPECHECK()"
       // reasoning as the array case above.
       if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
-        float r0, i0, r1, i1;
+        sifloat_t r0, i0, r1, i1;
         if (!sivm_numeric_to_complex_parts(v0, &r0, &i0) || !sivm_numeric_to_complex_parts(v1, &r1, &i1)) {
           sifault(pynter_fault_type);
           return;
@@ -681,12 +693,12 @@ static void main_loop(void) {
       sinanbox_t v0 = sistack_pop();
 
       if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
-        float a, b, c, d;
+        sifloat_t a, b, c, d;
         if (!sivm_numeric_to_complex_parts(v0, &a, &b) || !sivm_numeric_to_complex_parts(v1, &c, &d)) {
           sifault(pynter_fault_type);
           return;
         }
-        if (c * c + d * d == 0.0f) {
+        if (c == 0 && d == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
@@ -694,17 +706,17 @@ static void main_loop(void) {
         // to avoid premature overflow/underflow — matches
         // PyComplexNumber.divBy() in py-slang's value-types.ts exactly,
         // itself a port of CPython's own complexobject.c division.
-        float absC = fabsf(c);
-        float absD = fabsf(d);
-        float real, imag;
+        sifloat_t absC = SIFL(fabs)(c);
+        sifloat_t absD = SIFL(fabs)(d);
+        sifloat_t real, imag;
         if (absD < absC) {
-          float ratio = d / c;
-          float denom = c + d * ratio;
+          sifloat_t ratio = d / c;
+          sifloat_t denom = c + d * ratio;
           real = (a + b * ratio) / denom;
           imag = (b - a * ratio) / denom;
         } else {
-          float ratio = c / d;
-          float denom = d + c * ratio;
+          sifloat_t ratio = c / d;
+          sifloat_t denom = d + c * ratio;
           real = (a * ratio + b) / denom;
           imag = (b * ratio - a) / denom;
         }
@@ -722,7 +734,7 @@ static void main_loop(void) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        r = NANBOX_OFFLOAT(((float) NANBOX_INT(v0)) / NANBOX_INT(v1));
+        r = NANBOX_OFFLOAT(((sifloat_t) NANBOX_INT(v0)) / NANBOX_INT(v1));
         break;
       case 1: /* v0 is float */
         if (NANBOX_INT(v1) == 0) {
@@ -780,12 +792,13 @@ static void main_loop(void) {
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
       case 0: { /* neither are floats */
-        int32_t divisor = NANBOX_INT(v1);
+        // int64_t, so that INT32_MIN % -1 doesn't overflow (and trap)
+        int64_t divisor = NANBOX_INT(v1);
         if (divisor == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        int32_t m = NANBOX_INT(v0) % divisor;
+        int64_t m = ((int64_t) NANBOX_INT(v0)) % divisor;
         if (m != 0 && (m < 0) != (divisor < 0)) {
           m += divisor;
         }
@@ -793,12 +806,12 @@ static void main_loop(void) {
         break;
       }
       case 1: { /* v0 is float */
-        float divisor = (float) NANBOX_INT(v1);
+        sifloat_t divisor = (sifloat_t) NANBOX_INT(v1);
         if (divisor == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        float m = fmodf(NANBOX_FLOAT(v0), divisor);
+        sifloat_t m = SIFL(fmod)(NANBOX_FLOAT(v0), divisor);
         if (m != 0 && (m < 0) != (divisor < 0)) {
           m += divisor;
         }
@@ -806,12 +819,12 @@ static void main_loop(void) {
         break;
       }
       case 2: { /* v1 is float */
-        float divisor = NANBOX_FLOAT(v1);
+        sifloat_t divisor = NANBOX_FLOAT(v1);
         if (divisor == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        float m = fmodf(NANBOX_INT(v0), divisor);
+        sifloat_t m = SIFL(fmod)(NANBOX_INT(v0), divisor);
         if (m != 0 && (m < 0) != (divisor < 0)) {
           m += divisor;
         }
@@ -819,12 +832,12 @@ static void main_loop(void) {
         break;
       }
       case 3: { /* both are float */
-        float divisor = NANBOX_FLOAT(v1);
+        sifloat_t divisor = NANBOX_FLOAT(v1);
         if (divisor == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        float m = fmodf(NANBOX_FLOAT(v0), divisor);
+        sifloat_t m = SIFL(fmod)(NANBOX_FLOAT(v0), divisor);
         if (m != 0 && (m < 0) != (divisor < 0)) {
           m += divisor;
         }
@@ -860,14 +873,15 @@ static void main_loop(void) {
       sinanbox_t r;
       switch (NANBOX_ISFLOAT(v1) << 1 | NANBOX_ISFLOAT(v0)) {
       case 0: { /* neither are floats */
-        int32_t divisor = NANBOX_INT(v1);
+        // int64_t, so that INT32_MIN // -1 (2**31) doesn't overflow (and trap)
+        int64_t divisor = NANBOX_INT(v1);
         if (divisor == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        int32_t dividend = NANBOX_INT(v0);
-        int32_t q = dividend / divisor;
-        int32_t rem = dividend % divisor;
+        int64_t dividend = NANBOX_INT(v0);
+        int64_t q = dividend / divisor;
+        int64_t rem = dividend % divisor;
         if (rem != 0 && (rem < 0) != (divisor < 0)) {
           q -= 1;
         }
@@ -875,30 +889,30 @@ static void main_loop(void) {
         break;
       }
       case 1: { /* v0 is float */
-        float divisor = (float) NANBOX_INT(v1);
+        sifloat_t divisor = (sifloat_t) NANBOX_INT(v1);
         if (divisor == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        r = NANBOX_OFFLOAT(floorf(NANBOX_FLOAT(v0) / divisor));
+        r = NANBOX_OFFLOAT(SIFL(floor)(NANBOX_FLOAT(v0) / divisor));
         break;
       }
       case 2: { /* v1 is float */
-        float divisor = NANBOX_FLOAT(v1);
+        sifloat_t divisor = NANBOX_FLOAT(v1);
         if (divisor == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        r = NANBOX_OFFLOAT(floorf(NANBOX_INT(v0) / divisor));
+        r = NANBOX_OFFLOAT(SIFL(floor)(NANBOX_INT(v0) / divisor));
         break;
       }
       case 3: { /* both are float */
-        float divisor = NANBOX_FLOAT(v1);
+        sifloat_t divisor = NANBOX_FLOAT(v1);
         if (divisor == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        r = NANBOX_OFFLOAT(floorf(NANBOX_FLOAT(v0) / divisor));
+        r = NANBOX_OFFLOAT(SIFL(floor)(NANBOX_FLOAT(v0) / divisor));
         break;
       }
       default:
@@ -916,9 +930,10 @@ static void main_loop(void) {
     // powArith): int**int stays int for a non-negative exponent, a negative
     // exponent (or any float operand) always promotes to float. Python's
     // ints are arbitrary-precision, but this VM's aren't — like op_mul_g
-    // above, an int result outside the 21-bit range gracefully degrades to
+    // above, an int result outside the small-int range gracefully degrades to
     // float, computed via double (not a manual integer power loop) since
-    // anything in range is comfortably exact in a double's 52-bit mantissa.
+    // anything in range is comfortably exact in a double's 52-bit mantissa
+    // (the range of a small int is at most 32 bits).
     // `0 ** negative` is Python's ZeroDivisionError, checked explicitly
     // since C's pow/powf would otherwise happily return +inf.
     case op_pow_g: {
@@ -926,7 +941,7 @@ static void main_loop(void) {
       sinanbox_t v0 = sistack_pop();
 
       if (sivm_is_complex(v0) || sivm_is_complex(v1)) {
-        float a, b, A, B;
+        sifloat_t a, b, A, B;
         if (!sivm_numeric_to_complex_parts(v0, &a, &b) || !sivm_numeric_to_complex_parts(v1, &A, &B)) {
           sifault(pynter_fault_type);
           return;
@@ -935,23 +950,23 @@ static void main_loop(void) {
         // in py-slang's value-types.ts exactly. z == 0 with a negative-real
         // or non-real exponent is a ZeroDivisionError in real Python (e.g.
         // `0**(-1)`, `0**1j`), same as plain 0**negative below.
-        float mag = hypotf(a, b);
-        float theta = atan2f(b, a);
-        float real, imag;
-        if (mag == 0.0f) {
-          if (A < 0.0f || B != 0.0f) {
+        sifloat_t mag = SIFL(hypot)(a, b);
+        sifloat_t theta = SIFL(atan2)(b, a);
+        sifloat_t real, imag;
+        if (mag == 0.0) {
+          if (A < 0.0 || B != 0.0) {
             sifault(pynter_fault_divide_by_zero);
             return;
           }
-          real = 0.0f;
-          imag = 0.0f;
+          real = 0.0;
+          imag = 0.0;
         } else {
-          float logMag = logf(mag);
-          float realExpPart = A * logMag - B * theta;
-          float imagExpPart = B * logMag + A * theta;
-          float expOfReal = expf(realExpPart);
-          real = expOfReal * cosf(imagExpPart);
-          imag = expOfReal * sinf(imagExpPart);
+          sifloat_t logMag = SIFL(log)(mag);
+          sifloat_t realExpPart = A * logMag - B * theta;
+          sifloat_t imagExpPart = B * logMag + A * theta;
+          sifloat_t expOfReal = SIFL(exp)(realExpPart);
+          real = expOfReal * SIFL(cos)(imagExpPart);
+          imag = expOfReal * SIFL(sin)(imagExpPart);
         }
         sivm_push_complex_result(real, imag);
         siheap_derefbox(v0);
@@ -970,7 +985,7 @@ static void main_loop(void) {
             sifault(pynter_fault_divide_by_zero);
             return;
           }
-          r = NANBOX_OFFLOAT(powf((float) base, (float) exponent));
+          r = NANBOX_OFFLOAT(SIFL(pow)((sifloat_t) base, (sifloat_t) exponent));
         } else {
           // Bounds-check the double result *before* any llround/int64
           // conversion, not after (unlike NANBOX_WRAP_INT's usual
@@ -984,7 +999,7 @@ static void main_loop(void) {
           if (result >= NANBOX_INTMIN && result <= NANBOX_INTMAX) {
             r = NANBOX_OFINT((int32_t) llround(result));
           } else {
-            r = NANBOX_OFFLOAT((float) result);
+            r = NANBOX_OFFLOAT((sifloat_t) result);
           }
         }
         break;
@@ -994,7 +1009,7 @@ static void main_loop(void) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        r = NANBOX_OFFLOAT(powf(NANBOX_FLOAT(v0), (float) NANBOX_INT(v1)));
+        r = NANBOX_OFFLOAT(SIFL(pow)(NANBOX_FLOAT(v0), (sifloat_t) NANBOX_INT(v1)));
         break;
       }
       case 2: { /* v1 (exponent) is float */
@@ -1002,7 +1017,7 @@ static void main_loop(void) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        r = NANBOX_OFFLOAT(powf((float) NANBOX_INT(v0), NANBOX_FLOAT(v1)));
+        r = NANBOX_OFFLOAT(SIFL(pow)((sifloat_t) NANBOX_INT(v0), NANBOX_FLOAT(v1)));
         break;
       }
       case 3: { /* both float */
@@ -1010,7 +1025,7 @@ static void main_loop(void) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
-        r = NANBOX_OFFLOAT(powf(NANBOX_FLOAT(v0), NANBOX_FLOAT(v1)));
+        r = NANBOX_OFFLOAT(SIFL(pow)(NANBOX_FLOAT(v0), NANBOX_FLOAT(v1)));
         break;
       }
       default:
@@ -1029,7 +1044,7 @@ static void main_loop(void) {
       sinanbox_t v1 = sistack_pop();
 
       if (NANBOX_ISINT(v1)) {
-        sistack_push(NANBOX_WRAP_INT(-NANBOX_INT(v1)));
+        sistack_push(NANBOX_WRAP_INT(-((int64_t) NANBOX_INT(v1))));
       } else if (NANBOX_ISFLOAT(v1)) {
         sistack_push(NANBOX_OFFLOAT(-NANBOX_FLOAT(v1)));
       } else if (sivm_is_complex(v1)) {
