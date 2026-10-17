@@ -688,21 +688,32 @@ static sinanbox_t sivmfn_prim_math_lcm(uint8_t argc, sinanbox_t *argv) {
   // exceed NANBOX_INTMAX for larger inputs, unlike gcd. With three or more
   // large arguments it can even exceed int64_t, in which case the result is
   // the (approximate) float -- like any Python int past this VM's native
-  // range -- and the remaining arguments no longer matter much.
+  // range -- though a zero argument still makes it zero.
   int64_t result = 1;
+  bool overflowed = false;
+  double approx = 0.0;
   for (uint8_t i = 0; i < argc; ++i) {
     int64_t v = NANBOX_TOI32(argv[i]);
     if (v < 0) v = -v;
-    if (v == 0 || result == 0) {
-      result = 0;
+    if (v == 0) {
+      // any lcm containing zero is zero, even after an overflow
+      return NANBOX_WRAP_INT(0);
+    }
+    if (overflowed) {
+      approx *= (double) v; // approximate: the gcd is no longer known
       continue;
     }
     int64_t g = pynter_gcd_i64(result, v);
     int64_t scaled = result / g;
     if (scaled > INT64_MAX / v) {
-      return NANBOX_OFFLOAT((sifloat_t) ((double) scaled * (double) v));
+      overflowed = true;
+      approx = (double) scaled * (double) v;
+      continue;
     }
     result = scaled * v;
+  }
+  if (overflowed) {
+    return NANBOX_OFFLOAT((sifloat_t) approx);
   }
   return NANBOX_WRAP_INT(result);
 }
@@ -902,6 +913,10 @@ static sinanbox_t sivmfn_prim_math_fround(uint8_t argc, sinanbox_t *argv) {
   // floats already are single precision.
   if (NANBOX_ISFLOAT(*argv)) {
     return NANBOX_OFFLOAT((sifloat_t) (float) NANBOX_FLOAT(*argv));
+  }
+  if (NANBOX_ISINT(*argv)) {
+    // Math.fround(16777217) is 16777216: ints go through float too
+    return NANBOX_OFFLOAT((sifloat_t) (float) NANBOX_TOI32(*argv));
   }
   return *argv;
 }

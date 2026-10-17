@@ -368,15 +368,14 @@ static float sivm_float_of_f64_bits(uint64_t bits) {
       float_value.bits = 0x7FC00000u;
     }
   } else if (offset_exponent == 0) {
-    // zero/subnormal
-    float_value.bits |= f32_mantissa;
+    // f64 zero/subnormal: far below the f32 range, so a signed zero
   } else if (real_exponent >= -126 && real_exponent <= 127) {
     float_value.bits |= (real_exponent + 127) << 23;
     float_value.bits |= f32_mantissa;
   } else if (real_exponent < -126) {
-    float_value.value = -INFINITY;
-  } else if (real_exponent > 127) {
-    float_value.value = INFINITY;
+    // underflow (flushes f32 subnormals to zero); keeps the sign bit
+  } else {
+    float_value.bits |= 0x7F800000u; // overflow: signed infinity
   }
   return float_value.value;
 }
@@ -699,7 +698,7 @@ static void main_loop(void) {
           sifault(pynter_fault_type);
           return;
         }
-        if (c * c + d * d == 0.0) {
+        if (c == 0 && d == 0) {
           sifault(pynter_fault_divide_by_zero);
           return;
         }
