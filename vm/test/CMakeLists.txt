@@ -2,8 +2,16 @@ cmake_minimum_required(VERSION 3.10)
 
 project(vm_test C)
 
+# The expected output of some programs depends on the NaN-box layout; those have
+# a name.out for the default 64-bit layout and a name.out32 for PYNTER_NANBOX32.
+if(PYNTER_NANBOX32)
+  set(layout nanbox32)
+else()
+  set(layout nanbox64)
+endif()
+
 macro(add_run_test name)
-  add_test(NAME "run_${name}" COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_test.sh" "${runner_BINARY_DIR}/runner" "${CMAKE_CURRENT_SOURCE_DIR}/../../test_programs/${name}")
+  add_test(NAME "run_${name}" COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_test.sh" "${runner_BINARY_DIR}/runner" "${CMAKE_CURRENT_SOURCE_DIR}/../../test_programs/${name}" "${layout}")
 endmacro()
 
 macro(add_run_stderr_test name)
@@ -25,7 +33,12 @@ add_run_test(force_marksweep)
 add_run_test(inf_minus_inf)
 
 add_run_test(prim_is_function_stream)
-if(NOT ${PYNTER_TEST_SHORT_DOUBLE})
+# prim_math compares the results of the math functions bit for bit with those of
+# JavaScript's Math. That holds once they are rounded to single precision, but
+# not in double precision, where the libm of the test machine can differ from
+# V8's in the last bit (e.g. asin(0.5)). prim_math_lax compares with a
+# tolerance, in every layout.
+if(NOT ${PYNTER_TEST_SHORT_DOUBLE} AND PYNTER_NANBOX32)
   add_run_test(prim_math)
 endif()
 add_run_test(prim_math_lax)

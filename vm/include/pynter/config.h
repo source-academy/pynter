@@ -11,16 +11,21 @@
 #define PYNTER_DEBUG_LOGLEVEL 0
 #endif
 
+#include "layout.h"
+
 #ifdef PYNTER_STATIC_HEAP
 #ifndef PYNTER_HEAP_SIZE
-// 3.6 MiB (3774874 bytes) -- comfortably under the 4 MiB hard ceiling that
-// NaN-boxing's 22-bit heap-pointer field allows (a pointer is encoded as a
-// byte offset from the heap's base, see nanbox.h's own doc comment and
-// SIHEAP_PTRTONANBOX in heap.h), while leaving headroom below that ceiling.
+// 3.6 MiB (3774872 bytes, a multiple of 8) -- comfortably under the 4 MiB
+// hard ceiling that the 32-bit NaN-box layout's 22-bit heap-pointer field
+// allows (a pointer is encoded as a byte offset from the heap's base, see
+// nanbox.h's own doc comment and SIHEAP_PTRTONANBOX in heap.h), while leaving
+// headroom below that ceiling. The default 64-bit layout has 32-bit heap
+// offsets, so its heap can be larger (up to 4 GiB); the default is the same.
 // See the README's "Memory configuration" section for the full rationale;
 // override with -DPYNTER_HEAP_SIZE=<bytes> (CMake) or in pynter_config.h
-// (non-CMake build systems, e.g. Arduino) for memory-constrained targets.
-#define PYNTER_HEAP_SIZE 0x39999a
+// (non-CMake build systems, e.g. Arduino) for memory-constrained targets. A
+// custom size must be a multiple of 8.
+#define PYNTER_HEAP_SIZE 0x399998
 #endif
 #else
 #ifdef PYNTER_HEAP_SIZE

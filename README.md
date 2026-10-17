@@ -20,13 +20,17 @@ For implementation details, see [here](vm/docs/impl.md).
 
 Pynter implements most of Python (SICPy) §3, except:
 
-- Numbers are single-precision floating points. This means that
-  `16777216 + 1 === 16777216`. Complex numbers (below) are single-precision too — their `real`/`imag`
-  components are each a 32-bit float, matching this VM's other numeric types, unlike the
-  double-precision complex numbers py-slang's browser-pathway engines (CSE/PVML-in-browser/WASM) use.
+- Numbers are NaN-boxed in 64 bits by default, which makes `float`s double-precision (like Python's)
+  and `int`s 32-bit: an integer that overflows 32 bits becomes a `float` (there are no
+  arbitrary-precision integers yet, see [pynter#55](https://github.com/source-academy/pynter/issues/55)),
+  so that `2147483647 + 1` is `2147483648.0`. Targets with a few KiB of RAM use a compact 32-bit
+  layout (`PYNTER_NANBOX32`, selected automatically on AVR/Arduino) with single-precision floats and
+  21-bit `int`s, where `16777216 + 1 === 16777216`. See ["Value layout"](#value-layout). Complex
+  numbers (below) have the same precision as floats: their `real`/`imag` components are each a float.
 - `time_time()` deliberately does **not** return real wall-clock/epoch time, even on devices that
   have one (native, EV3) — it returns seconds since approximately when the program started, as a
-  monotonically increasing value. This follows directly from the single-precision point above: an
+  monotonically increasing value. This follows from the single-precision point above, which still holds for
+  the 32-bit layout: an
   epoch timestamp (~1.8e9 today) only has ~128 seconds of resolution at that magnitude in a 32-bit
   float, which would make it useless for the elapsed-time timing (sensor loops, delays) this exists
   for; keeping the value small keeps it precise. (EV3 also has no battery-backed RTC in the first
@@ -241,9 +245,14 @@ Some configuration is available via CMake defines:
   from. See ["Memory configuration"](#memory-configuration) below.
 
 - `PYNTER_HEAP_SIZE`: size in bytes of the statically-allocated heap (ignored
-  if `PYNTER_STATIC_HEAP` is off); defaults to `0x39999a` i.e. 3.6 MiB. See
+  if `PYNTER_STATIC_HEAP` is off); defaults to `0x399998` i.e. 3.6 MiB, and has
+  to be a multiple of 8. See
   ["Memory configuration"](#memory-configuration) below for why, and for the
-  hard ceiling this can't exceed.
+  hard ceiling this can't exceed with `PYNTER_NANBOX32`.
+
+- `PYNTER_NANBOX32`: if `1`, uses the compact 32-bit NaN-box (single-precision
+  floats, 21-bit `int`s, a heap of at most 4 MiB) instead of the default 64-bit
+  one. Defaults to unset, except on AVR. See ["Value layout"](#value-layout).
 
 - `PYNTER_STACK_ENTRIES`: size in stack entries of the statically-allocated
   stack; defaults to `0x200` i.e. 512
@@ -274,32 +283,60 @@ Some configuration is available via CMake defines:
   stack, and reference counting. Note: this slows down execution severely.
   Defaults to unset.
 
+### Value layout
+
+Pynter values are NaN-boxed (`sinanbox_t`, see `vm/include/pynter/nanbox.h`). There are two layouts,
+selected when building:
+
+|  | 64-bit (default) | 32-bit (`PYNTER_NANBOX32`) |
+| --- | --- | --- |
+| size of a value | 8 bytes | 4 bytes |
+| `float` | double precision (`f64`, like Python's) | single precision (`f32`) |
+| small `int` | 32 bits: `-2147483648` to `2147483647` | 21 bits: `-1048576` to `1048575` |
+| heap offset | 32 bits (heap up to 4 GiB) | 22 bits (heap up to 4 MiB) |
+| complex number components | `f64` | `f32` |
+
+The 32-bit layout is meant for targets with a few KiB of RAM, where a value has to fit in 4 bytes,
+and is selected automatically on AVR (Arduino). Every other target, including the browser (WASM),
+EV3 and ESP32, uses the 64-bit layout by default. (The ESP32's FPU is single precision only, so
+`f64` arithmetic is slower there; a build for the ESP32 that favors speed over precision can
+define `PYNTER_NANBOX32`. On the EV3's FPU-less ARM9, `f32` and `f64` are both emulated in software,
+and `f64` costs about 2× on float arithmetic only.) CMake builds select the compact layout with
+`-DPYNTER_NANBOX32=1`; others by uncommenting the define in `vm/include/pynter_config.h` or passing
+`-DPYNTER_NANBOX32`.
+
+Both layouts run the same bytecode (constants are `f64` in the bytecode either way, and are
+narrowed on load in the 32-bit layout), and both are tested in CI. The C API differs: `pynter_value_t`
+holds a `sifloat_t` (a `double` or a `float`) and an `object_value` of 64 or 32 bits, so with the
+64-bit layout its union starts at byte offset 8 instead of 4 (16 bytes in total on wasm32).
+
 ### Memory configuration
 
-Pynter values are NaN-boxed into a single 32-bit word (`sinanbox_t`, see
-`vm/include/pynter/nanbox.h`): a heap pointer's tag consumes the top 10 bits,
-leaving only **22 bits** for the pointer payload itself. That payload isn't a
-scaled index into some larger unit — `SIHEAP_PTRTONANBOX` (`vm/include/pynter/heap.h`)
-encodes it as a **raw byte offset** from the heap's base address (`siheap`).
-That makes
+A heap pointer in a NaN-box is a **raw byte offset** from the heap's base address (`siheap`) —
+`SIHEAP_PTRTONANBOX` (`vm/include/pynter/heap.h`) encodes it so. With the 64-bit layout the offset is
+32 bits wide, so the heap can be as large as 4 GiB; with `PYNTER_NANBOX32` it is 22 bits wide, and
 
 ```
 2^22 bytes = 0x400000 = 4 MiB
 ```
 
-a hard ceiling: no Pynter heap object can ever live more than 4 MiB from the
-start of the heap, on any target, because there is nowhere left in the
-nanbox to store a larger offset. `PYNTER_HEAP_SIZE` cannot be raised beyond
-`0x400000` — doing so would let the heap allocate objects whose offset can no
-longer round-trip through a nanbox pointer.
+is a hard ceiling: no Pynter heap object can ever live more than 4 MiB from the start of the heap,
+because there is nowhere left in the NaN-box to store a larger offset. `PYNTER_HEAP_SIZE` cannot be
+raised beyond `0x400000` there — doing so would let the heap allocate objects whose offset can no
+longer round-trip through a NaN-box pointer.
 
-The default, `0x39999a` (3.6 MiB), stays comfortably under that ceiling while
-still using most of the address space NaN-boxing allows. Older versions of
+All heap blocks are 8-byte aligned (with the 64-bit layout) so that values inside heap objects are
+aligned: some CPUs, like the EV3's ARM9, fault on unaligned 8-byte accesses. So `PYNTER_HEAP_SIZE` has to be a multiple of 8, and a
+heap given to `pynter_setup_heap` is aligned and rounded down to fit.
+
+The default, `0x399998` (3.6 MiB), stays comfortably under the 4 MiB ceiling of the 32-bit layout
+while still using most of the address space it allows. Older versions of
 this default were far smaller (`0x10000`, 64 KB) — a conservative choice better
 suited to genuinely memory-constrained targets (see `devices/arduino`,
 `devices/esp32`) than to targets with real RAM to spare (a desktop build, or
 `devices/ev3`'s ev3dev-stretch Linux userspace), which were leaving almost
-all of the 4 MiB NaN-boxing allows unused for no benefit.
+all of the 4 MiB unused for no benefit. With the 64-bit layout, values take twice the space, so that
+heap holds half as many of them; targets with RAM to spare can raise `PYNTER_HEAP_SIZE`.
 
 If you're targeting a memory-constrained device, lower `PYNTER_HEAP_SIZE` to
 fit — via the `PYNTER_HEAP_SIZE` CMake define, or by uncommenting and editing
@@ -312,8 +349,14 @@ rather than baking a fixed size into the binary at compile time.
 ### Numeric representation
 
 Pynter's NaN-box gives `int` its own dedicated tag (`NANBOX_TINT`), distinct
-from `float` — but that tag's payload is only **21 bits**, not the 32 you
-might expect from an `int32_t`-sized operand:
+from `float`. With the 64-bit layout that tag's payload is 32 bits wide:
+
+```
+NANBOX_INTMIN = -0x80000000 = -2,147,483,648
+NANBOX_INTMAX =  0x7FFFFFFF =  2,147,483,647
+```
+
+With `PYNTER_NANBOX32` it is only **21 bits**:
 
 ```
 NANBOX_INTMIN = -0x100000 = -1,048,576
@@ -323,39 +366,28 @@ NANBOX_INTMAX =  0x0FFFFF =  1,048,575
 (see `vm/include/pynter/nanbox.h`). A value outside that range is silently
 re-encoded as a `float` instead (`NANBOX_WRAP_INT`) rather than raising a
 fault — so `type()` for the *same* Python source can differ purely based on
-a literal's magnitude: `1048575` is a genuine `int`; `1048576` is a `float`.
+a literal's magnitude: `2147483647` is a genuine `int`; `2147483648` is a `float` (and `1048576`,
+with `PYNTER_NANBOX32`).
 
-py-slang's `PVMLCompiler` (`targetsPynter` mode) does not currently narrow its
-`LGCI`-vs-`LGCF64` decision to this 21-bit window — it decides using the full
-32-bit signed range (`I32_MIN`/`I32_MAX` in `pvml-compiler.ts`) instead. In
-practice this means a literal like `1048576` (well within 32 bits) still
-compiles to `LGCI`, is serialised as a full 32-bit operand, and only gets
-silently reinterpreted as a `float` at the VM level when loaded (via
-`NANBOX_WRAP_INT`, as above) — the same end result (`type()` disagreeing with
-what the source looks like it should be), but compiled as if it *were* a
-representable `int`, rather than openly as a `float`. See
-[pynter#6](https://github.com/source-academy/pynter/issues/6) for the original
-report and py-slang's `pvml-compiler.ts` for the current encoding logic.
+This is a deliberate, narrow limit, not arbitrary-precision `int` support (that is tracked in
+[pynter#55](https://github.com/source-academy/pynter/issues/55)). A float is exact for every
+integer up to `2^53` with the 64-bit layout, so integers beyond the `int` range stay exact for a
+while (e.g. `2147483647 + 1` is exactly `2147483648.0`), unlike with the 32-bit layout, where a float
+is exact only up to `2^24` (16,777,216) and so large integers lose their exact value (e.g.
+`2147483647` prints as `2147483648.0`, not because of an off-by-one bug, but because that's the
+nearest value a `float32` can actually represent).
 
-This is a deliberate, narrow limit, not arbitrary-precision `int` support — matching Pynter's
-design as a VM for embedded/32-bit targets. There is no plan to widen it without a demonstrated
-need; the NaN-box does have unused address space that *could* fit a wider
-tag if one ever becomes necessary (see `nanbox.h`'s own header comment for
-the currently-unused ranges), but speculatively building that now isn't
-justified by anything this VM actually needs to run today.
+py-slang's `PVMLCompiler` (`targetsPynter` mode) decides between `LGCI` and `LGCF64` for a literal
+using the full 32-bit signed range (`I32_MIN`/`I32_MAX` in `pvml-compiler.ts`), which is exactly the
+range of the 64-bit layout. With `PYNTER_NANBOX32`, a literal like `1048576` (well within 32 bits)
+still compiles to `LGCI`, is serialised as a full 32-bit operand, and only gets silently
+reinterpreted as a `float` at the VM level when loaded (via `NANBOX_WRAP_INT`, as above). See
+[pynter#6](https://github.com/source-academy/pynter/issues/6) for the original report.
 
-`float` itself is single-precision (`float32`, via `NANBOX_FLOAT`/
-`NANBOX_OFFLOAT`), not `float64` — roughly 7 significant decimal digits, and
-loses the ability to represent every integer *exactly* once a value's
-magnitude exceeds `2^24` (16,777,216). This matters beyond ordinary
-arithmetic: any `int` literal or computed value that falls outside the
-21-bit range above becomes a `float`, so a large integer can lose exact
-value, not just its `int` type, once it's large enough that float32 can't
-represent it precisely (e.g. `2147483647` — `int32` max — prints as
-`2147483648.0`, not because of an off-by-one bug, but because that's the
-nearest value float32 can actually represent). Complex numbers
-(`siheap_complex_t`) use the same `float32` components, for the same
-embedded-target reason — see the complex-number section above.
+`float` is a `sifloat_t`: double precision (`double`) with the 64-bit layout, like Python's, and
+single precision (`float`) with `PYNTER_NANBOX32`, which gives roughly 7 significant decimal digits.
+Complex numbers (`siheap_complex_t`) use the same type for their components — see the complex-number
+section above.
 
 ## Origins
 

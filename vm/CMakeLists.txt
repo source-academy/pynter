@@ -3,6 +3,11 @@ cmake_minimum_required(VERSION 3.10)
 set(PYNTER_DEBUG_LOGLEVEL 0 CACHE STRING "Debug level")
 set(PYNTER_STATIC_HEAP 1 CACHE STRING "Enable static heap")
 set(PYNTER_TEST_SHORT_DOUBLE 0 CACHE STRING "Test short double workaround")
+set(PYNTER_NANBOX32 0 CACHE STRING "Use the compact 32-bit NaN-box (single-precision floats, 21-bit small ints, at most 4 MiB of heap) instead of the default 64-bit one")
+
+if(PYNTER_TEST_SHORT_DOUBLE AND NOT PYNTER_NANBOX32)
+  message(FATAL_ERROR "PYNTER_TEST_SHORT_DOUBLE needs PYNTER_NANBOX32 (a 64-bit NaN-box needs a real double)")
+endif()
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "Defaulting to Debug build.")
@@ -35,6 +40,7 @@ target_compile_options(pynter
   PUBLIC $<$<BOOL:${PYNTER_DEBUG_MEMORY_CHECK}>:-DPYNTER_DEBUG_MEMORY_CHECK>
   PUBLIC $<$<BOOL:${PYNTER_DISABLE_CHECKS}>:-DPYNTER_DISABLE_CHECKS>
   PUBLIC $<$<BOOL:${PYNTER_TEST_SHORT_DOUBLE}>:-DPYNTER_TEST_SHORT_DOUBLE>
+  PUBLIC $<$<BOOL:${PYNTER_NANBOX32}>:-DPYNTER_NANBOX32>
   PUBLIC $<$<BOOL:${PYNTER_COVERAGE}>:--coverage -fno-inline -fno-inline-small-functions -fno-default-inline>
 )
 

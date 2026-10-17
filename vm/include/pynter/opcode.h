@@ -136,22 +136,31 @@ PYNTER_OPSTRUCT(f32, 4,
   float operand;
 )
 
+#if DBL_MANT_DIG == 53 && !defined(PYNTER_TEST_SHORT_DOUBLE)
 // op_lgc_c's operand: both components inlined directly (mirrors op_f32/
 // op_f64's "constant lives right in the instruction stream" pattern, rather
 // than a separate constant pool — see py-slang's pvml-assembler.ts for the
-// serialization side).
-PYNTER_OPSTRUCT(complex, 8,
-  float real;
-  float imag;
+// serialization side). Each component is a double, whatever the NaN-box
+// layout is, so a program means the same on any build.
+PYNTER_OPSTRUCT(complex, 16,
+  double real;
+  double imag;
 )
 
-#if DBL_MANT_DIG == 53 && !defined(PYNTER_TEST_SHORT_DOUBLE)
 PYNTER_OPSTRUCT(f64, 8,
   double operand;
 )
 _Static_assert(sizeof(double) == 8, "double is not 64-bit");
 #else
+#ifndef PYNTER_NANBOX32
+#error PYNTER_TEST_SHORT_DOUBLE needs PYNTER_NANBOX32 (a 64-bit NaN-box needs a real double)
+#endif
 #define PYNTER_SHORT_DOUBLE_WORKAROUND
+PYNTER_OPSTRUCT(complex, 16,
+  uint64_t real_u64;
+  uint64_t imag_u64;
+)
+
 PYNTER_OPSTRUCT(f64, 8,
   uint64_t operand_u64;
 )

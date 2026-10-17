@@ -12,7 +12,7 @@
 
 #if PYNTER_DEBUG_LOGLEVEL >= 1
 void debug_nanbox(sinanbox_t v) {
-  SIDEBUG("%"PRIx32 " ", v.as_u32);
+  SIDEBUG(SINANBOX_BITS_FMT " ", NANBOX_BITS(v));
   switch (NANBOX_GETTYPE(v)) {
   NANBOX_CASES_TINT
     SIDEBUG(("integer, value: %" PRId32), NANBOX_INT(v));
@@ -37,7 +37,7 @@ void debug_nanbox(sinanbox_t v) {
     if (NANBOX_ISFLOAT(v)) {
       SIDEBUG("float, value: %f", NANBOX_FLOAT(v));
     } else {
-      SIDEBUG("unknown NaNbox value: %08x", v.as_u32);
+      SIDEBUG("unknown NaNbox value: " SINANBOX_BITS_FMT, NANBOX_BITS(v));
     }
     break;
   }

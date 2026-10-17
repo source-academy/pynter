@@ -143,7 +143,8 @@ PYNTER_INLINE void sifunction_destroy(siheap_function_t *fn) {
  * is validated range()-only upstream in py-slang, so no other iterable shape
  * ever reaches this VM). `current`/`stop`/`step` are plain C ints, not
  * nanboxes: the values *produced* per iteration go through NANBOX_WRAP_INT
- * (falling back to float once out of the 21-bit small-int range), but the
+ * (falling back to float once out of the small-int range, which is narrower
+ * than int32 with PYNTER_NANBOX32), but the
  * iterator's own bookkeeping needs full int32 range to match range()'s own
  * argument range, matching py-slang's PVMLIterator's `current`/`stop`/`step`
  * fields (see src/engines/pvml/types.ts and pvml-interpreter.ts's FOR_ITER
@@ -172,21 +173,21 @@ PYNTER_INLINE void siiterator_destroy(siheap_iterator_t *iter) {
 
 /**
  * A Python complex number (`real + imag*1j`) — see LGCC (op_lgc_c) and the
- * arithmetic opcodes' complex branches in vm.c. Single-precision (`float`),
- * matching this VM's existing scalar float width, rather than the double
- * precision py-slang's own PyComplexNumber (the shared spec-of-record type
- * used by CSE/PVML-in-browser/WASM) uses — a deliberate choice for this
- * native VM specifically, to stay consistent with every other number here
- * being 32-bit; see py-slang's operator-conformance-pynter.test.ts for the
- * float32-tolerance comparison this implies for conformance testing.
+ * arithmetic opcodes' complex branches in vm.c. Its components have the
+ * precision of this VM's floats (`sifloat_t`): double-precision, like
+ * py-slang's own PyComplexNumber (the shared spec-of-record type used by
+ * CSE/PVML-in-browser/WASM), with the default 64-bit NaN-boxing; single-
+ * precision with PYNTER_NANBOX32, to stay consistent with every other number
+ * there being 32-bit (see py-slang's operator-conformance-pynter.test.ts for
+ * the tolerance comparison that implies for conformance testing).
  */
 typedef struct {
   siheap_header_t header;
-  float real;
-  float imag;
+  sifloat_t real;
+  sifloat_t imag;
 } siheap_complex_t;
 
-PYNTER_INLINE siheap_complex_t *sicomplex_new(float real, float imag) {
+PYNTER_INLINE siheap_complex_t *sicomplex_new(sifloat_t real, sifloat_t imag) {
   siheap_complex_t *c = (siheap_complex_t *) siheap_malloc(sizeof(siheap_complex_t), sitype_complex);
   c->real = real;
   c->imag = imag;
@@ -365,11 +366,24 @@ PYNTER_INLINEIFC void siarray_put(siheap_array_t *array, address_t index, sinanb
 PYNTER_INLINEIFC void siarray_destroy(siheap_array_t *array);
 
 #ifndef __cplusplus
+/**
+ * The size of the data block of an array of the given number of elements. A
+ * small int can be as large as an array is long, so this must not overflow:
+ * faults if the block cannot be addressed.
+ */
+PYNTER_INLINE size_t siarray_data_size(address_t alloc_size) {
+  if ((uint64_t) alloc_size > (UINT32_MAX - sizeof(siheap_array_data_t)) / sizeof(sinanbox_t)) {
+    sifault(pynter_fault_out_of_memory);
+  }
+  return sizeof(siheap_array_data_t) + (size_t) alloc_size * sizeof(sinanbox_t);
+}
+
 PYNTER_INLINEIFC siheap_array_t *siarray_new(address_t alloc_size) {
+  const size_t data_size = siarray_data_size(alloc_size);
   siheap_array_t *array = (siheap_array_t *) siheap_malloc(sizeof(siheap_array_t), sitype_array);
   array->count = 0;
   array->alloc_size = alloc_size;
-  array->data = (siheap_array_data_t *) siheap_malloc(sizeof(siheap_array_data_t) + alloc_size*sizeof(sinanbox_t), sitype_array_data);
+  array->data = (siheap_array_data_t *) siheap_malloc(data_size, sitype_array_data);
 
   for (address_t i = 0; i < alloc_size; ++i) {
     array->data->data[i] = NANBOX_OFUNDEF();
@@ -396,7 +410,7 @@ PYNTER_INLINEIFC void siarray_put(siheap_array_t *array, address_t index, sinanb
       new_size = UINT32_MAX;
     }
     array->data = (siheap_array_data_t *) siheap_mrealloc(&array->data->header,
-      sizeof(siheap_array_data_t) + new_size*sizeof(sinanbox_t));
+      siarray_data_size(new_size));
     for (address_t i = array->alloc_size; i < new_size; ++i) {
       array->data->data[i] = NANBOX_OFUNDEF();
     }

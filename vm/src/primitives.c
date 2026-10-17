@@ -184,15 +184,15 @@ static sinanbox_t sivmfn_prim_imag(uint8_t argc, sinanbox_t *argv) {
  * no string-to-number parser, so complex("3+4j")-style string arguments
  * aren't supported and fault as a type error, unlike the CSE reference.
  */
-static bool sivmprim_to_complex_parts(sinanbox_t v, float *out_real, float *out_imag) {
+static bool sivmprim_to_complex_parts(sinanbox_t v, sifloat_t *out_real, sifloat_t *out_imag) {
   if (NANBOX_ISBOOL(v)) {
-    *out_real = NANBOX_BOOL(v) ? 1.0f : 0.0f;
-    *out_imag = 0.0f;
+    *out_real = NANBOX_BOOL(v) ? 1.0 : 0.0;
+    *out_imag = 0.0;
     return true;
   }
   if (NANBOX_ISNUMERIC(v)) {
     *out_real = NANBOX_TOFLOAT(v);
-    *out_imag = 0.0f;
+    *out_imag = 0.0;
     return true;
   }
   if (NANBOX_ISPTR(v) && siheap_is_complex((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))) {
@@ -206,10 +206,10 @@ static bool sivmprim_to_complex_parts(sinanbox_t v, float *out_real, float *out_
 
 static sinanbox_t sivmfn_prim_complex(uint8_t argc, sinanbox_t *argv) {
   if (argc == 0) {
-    return SIHEAP_PTRTONANBOX(sicomplex_new(0.0f, 0.0f));
+    return SIHEAP_PTRTONANBOX(sicomplex_new(0.0, 0.0));
   }
   if (argc == 1) {
-    float real, imag;
+    sifloat_t real, imag;
     if (!sivmprim_to_complex_parts(argv[0], &real, &imag)) {
       sifault(pynter_fault_type);
     }
@@ -219,7 +219,7 @@ static sinanbox_t sivmfn_prim_complex(uint8_t argc, sinanbox_t *argv) {
   // this at 2 upstream; CHECK_ARGC-style min-only conventions elsewhere in
   // this VM don't enforce an upper bound either, so extra args are simply
   // ignored here rather than specially rejected).
-  float r0, i0, r1, i1;
+  sifloat_t r0, i0, r1, i1;
   if (!sivmprim_to_complex_parts(argv[0], &r0, &i0) || !sivmprim_to_complex_parts(argv[1], &r1, &i1)) {
     sifault(pynter_fault_type);
   }
@@ -270,9 +270,10 @@ static sinanbox_t sivmfn_prim_gen_list(uint8_t argc, sinanbox_t *argv) {
   int32_t n = NANBOX_TOI32(argv[0]);
   // Reject negative sizes, and cap at NANBOX_INTMAX (consistent with other
   // collection-size limits in the VM, e.g. stream_reverse's index check
-  // below): an unbounded n's allocation size (alloc_size * sizeof(sinanbox_t)
-  // in siarray_new) can overflow, turning a huge request into a small
-  // allocation and a heap buffer overflow when writing to it.
+  // below). A size that no heap can hold faults with out-of-memory in
+  // siarray_new, which checks that alloc_size * sizeof(sinanbox_t) can't
+  // overflow (turning a huge request into a small allocation and a heap
+  // buffer overflow when writing to it).
   if (n < 0 || n > NANBOX_INTMAX) {
     sifault(pynter_fault_type);
     return NANBOX_OFEMPTY();
@@ -364,14 +365,14 @@ static void print_llist_leaf(sinanbox_t v, bool is_error) {
       siheap_complex_t *c = (siheap_complex_t *) h;
       char real_buf[32], imag_buf[32], buf[80];
       sidisplay_complex_component(imag_buf, sizeof(imag_buf), c->imag);
-      if (c->real == 0.0f) {
+      if (c->real == 0.0) {
         snprintf(buf, sizeof(buf), "%sj", imag_buf);
       } else {
         sidisplay_complex_component(real_buf, sizeof(real_buf), c->real);
         // c->imag != c->imag catches NaN, which `>= 0.0f` alone misses (all
         // comparisons with NaN except != are false) -- without it, a NaN
         // imaginary part loses its separator ("1NaNj", unparseable).
-        bool imag_nonneg_or_nan = c->imag >= 0.0f || c->imag != c->imag;
+        bool imag_nonneg_or_nan = c->imag >= 0.0 || c->imag != c->imag;
         snprintf(buf, sizeof(buf), "%s%s%sj", real_buf, (imag_nonneg_or_nan ? "+" : ""), imag_buf);
       }
       SIVMFN_PRINT(buf, is_error);
@@ -453,12 +454,12 @@ static sinanbox_t sivmfn_prim_print_llist(uint8_t argc, sinanbox_t *argv) {
 
 #define MATH_FN(name) static sinanbox_t sivmfn_prim_math_ ## name(uint8_t argc, sinanbox_t *argv) { \
   CHECK_ARGC(1); \
-  return NANBOX_OFFLOAT(name ## f(NANBOX_TOFLOAT(*argv))); \
+  return NANBOX_OFFLOAT(SIFL(name)(NANBOX_TOFLOAT(*argv))); \
 }
 
 #define MATH_FN_2(name) static sinanbox_t sivmfn_prim_math_ ## name(uint8_t argc, sinanbox_t *argv) { \
   CHECK_ARGC(2); \
-  return NANBOX_OFFLOAT(name ## f(NANBOX_TOFLOAT(argv[0]), NANBOX_TOFLOAT(argv[1]))); \
+  return NANBOX_OFFLOAT(SIFL(name)(NANBOX_TOFLOAT(argv[0]), NANBOX_TOFLOAT(argv[1]))); \
 }
 
 // Like MATH_FN, but for functions with a restricted domain (matching
@@ -475,30 +476,30 @@ static sinanbox_t sivmfn_prim_print_llist(uint8_t argc, sinanbox_t *argv) {
 // check (`!(x >= 0.0f)`) would be true for NaN and wrongly raise instead.
 #define MATH_FN_DOMAIN(name, domain_reject_expr) static sinanbox_t sivmfn_prim_math_ ## name(uint8_t argc, sinanbox_t *argv) { \
   CHECK_ARGC(1); \
-  float x = NANBOX_TOFLOAT(*argv); \
+  sifloat_t x = NANBOX_TOFLOAT(*argv); \
   if (domain_reject_expr) { \
     sifault(pynter_fault_value_error); \
   } \
-  return NANBOX_OFFLOAT(name ## f(x)); \
+  return NANBOX_OFFLOAT(SIFL(name)(x)); \
 }
 
-MATH_FN_DOMAIN(acos, x < -1.0f || x > 1.0f)
-MATH_FN_DOMAIN(acosh, x < 1.0f)
-MATH_FN_DOMAIN(asin, x < -1.0f || x > 1.0f)
+MATH_FN_DOMAIN(acos, x < -1.0 || x > 1.0)
+MATH_FN_DOMAIN(acosh, x < 1.0)
+MATH_FN_DOMAIN(asin, x < -1.0 || x > 1.0)
 MATH_FN(asinh)
 MATH_FN(atan)
-MATH_FN_DOMAIN(atanh, x <= -1.0f || x >= 1.0f)
+MATH_FN_DOMAIN(atanh, x <= -1.0 || x >= 1.0)
 MATH_FN(cbrt)
 MATH_FN(cos)
 MATH_FN(cosh)
 MATH_FN(exp)
 MATH_FN(expm1)
-MATH_FN_DOMAIN(log1p, x <= -1.0f)
-MATH_FN_DOMAIN(log2, x <= 0.0f)
-MATH_FN_DOMAIN(log10, x <= 0.0f)
+MATH_FN_DOMAIN(log1p, x <= -1.0)
+MATH_FN_DOMAIN(log2, x <= 0.0)
+MATH_FN_DOMAIN(log10, x <= 0.0)
 MATH_FN(sin)
 MATH_FN(sinh)
-MATH_FN_DOMAIN(sqrt, x < 0.0f)
+MATH_FN_DOMAIN(sqrt, x < 0.0)
 MATH_FN(tan)
 MATH_FN(tanh)
 MATH_FN_2(atan2)
@@ -509,88 +510,88 @@ MATH_FN_2(pow)
 // math.ts's @Validate(1, 2, "math_log", true)), so it can't use MATH_FN.
 static sinanbox_t sivmfn_prim_math_log(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  float x = NANBOX_TOFLOAT(argv[0]);
-  if (x <= 0.0f) {
+  sifloat_t x = NANBOX_TOFLOAT(argv[0]);
+  if (x <= 0.0) {
     sifault(pynter_fault_value_error);
   }
   if (argc == 1) {
-    return NANBOX_OFFLOAT(logf(x));
+    return NANBOX_OFFLOAT(SIFL(log)(x));
   }
-  float base = NANBOX_TOFLOAT(argv[1]);
-  if (base <= 0.0f) {
+  sifloat_t base = NANBOX_TOFLOAT(argv[1]);
+  if (base <= 0.0) {
     sifault(pynter_fault_value_error);
   }
-  return NANBOX_OFFLOAT(logf(x) / logf(base));
+  return NANBOX_OFFLOAT(SIFL(log)(x) / SIFL(log)(base));
 }
 
 // M_PI isn't standard C (only conditionally exposed by <math.h> depending on
 // feature-test macros -- present on macOS unconditionally, but undeclared
 // under CI's stricter Linux/Emscripten builds), so it's spelled out here
 // instead of relied on.
-#define PYNTER_PI 3.14159265358979323846f
+#define PYNTER_PI 3.14159265358979323846
 
 // math.degrees(x)/math.radians(x): simple linear conversions, no native
 // counterpart until now (see builtins.ts's PRIMITIVE_FUNCTIONS comment).
 static sinanbox_t sivmfn_prim_math_degrees(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  float x = NANBOX_TOFLOAT(*argv);
-  return NANBOX_OFFLOAT(x * 180.0f / PYNTER_PI);
+  sifloat_t x = NANBOX_TOFLOAT(*argv);
+  return NANBOX_OFFLOAT(x * 180.0 / PYNTER_PI);
 }
 
 static sinanbox_t sivmfn_prim_math_radians(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  float x = NANBOX_TOFLOAT(*argv);
-  return NANBOX_OFFLOAT(x * PYNTER_PI / 180.0f);
+  sifloat_t x = NANBOX_TOFLOAT(*argv);
+  return NANBOX_OFFLOAT(x * PYNTER_PI / 180.0);
 }
 
 static sinanbox_t sivmfn_prim_math_erf(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  return NANBOX_OFFLOAT(erff(NANBOX_TOFLOAT(*argv)));
+  return NANBOX_OFFLOAT(SIFL(erf)(NANBOX_TOFLOAT(*argv)));
 }
 
 static sinanbox_t sivmfn_prim_math_erfc(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  return NANBOX_OFFLOAT(erfcf(NANBOX_TOFLOAT(*argv)));
+  return NANBOX_OFFLOAT(SIFL(erfc)(NANBOX_TOFLOAT(*argv)));
 }
 
 static sinanbox_t sivmfn_prim_math_fabs(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  return NANBOX_OFFLOAT(fabsf(NANBOX_TOFLOAT(*argv)));
+  return NANBOX_OFFLOAT(SIFL(fabs)(NANBOX_TOFLOAT(*argv)));
 }
 
 static sinanbox_t sivmfn_prim_math_fma(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(3);
-  float x = NANBOX_TOFLOAT(argv[0]);
-  float y = NANBOX_TOFLOAT(argv[1]);
-  float z = NANBOX_TOFLOAT(argv[2]);
-  return NANBOX_OFFLOAT(fmaf(x, y, z));
+  sifloat_t x = NANBOX_TOFLOAT(argv[0]);
+  sifloat_t y = NANBOX_TOFLOAT(argv[1]);
+  sifloat_t z = NANBOX_TOFLOAT(argv[2]);
+  return NANBOX_OFFLOAT(SIFL(fma)(x, y, z));
 }
 
 static sinanbox_t sivmfn_prim_math_fmod(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(2);
-  float x = NANBOX_TOFLOAT(argv[0]);
-  float y = NANBOX_TOFLOAT(argv[1]);
-  if (y == 0.0f) {
+  sifloat_t x = NANBOX_TOFLOAT(argv[0]);
+  sifloat_t y = NANBOX_TOFLOAT(argv[1]);
+  if (y == 0.0) {
     sifault(pynter_fault_value_error);
   }
-  return NANBOX_OFFLOAT(fmodf(x, y));
+  return NANBOX_OFFLOAT(SIFL(fmod)(x, y));
 }
 
 static sinanbox_t sivmfn_prim_math_remainder(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(2);
-  float x = NANBOX_TOFLOAT(argv[0]);
-  float y = NANBOX_TOFLOAT(argv[1]);
-  if (y == 0.0f) {
+  sifloat_t x = NANBOX_TOFLOAT(argv[0]);
+  sifloat_t y = NANBOX_TOFLOAT(argv[1]);
+  if (y == 0.0) {
     sifault(pynter_fault_value_error);
   }
-  return NANBOX_OFFLOAT(remainderf(x, y));
+  return NANBOX_OFFLOAT(SIFL(remainder)(x, y));
 }
 
 static sinanbox_t sivmfn_prim_math_copysign(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(2);
-  float x = NANBOX_TOFLOAT(argv[0]);
-  float y = NANBOX_TOFLOAT(argv[1]);
-  return NANBOX_OFFLOAT(copysignf(x, y));
+  sifloat_t x = NANBOX_TOFLOAT(argv[0]);
+  sifloat_t y = NANBOX_TOFLOAT(argv[1]);
+  return NANBOX_OFFLOAT(SIFL(copysign)(x, y));
 }
 
 static sinanbox_t sivmfn_prim_math_isfinite(uint8_t argc, sinanbox_t *argv) {
@@ -610,27 +611,27 @@ static sinanbox_t sivmfn_prim_math_isnan(uint8_t argc, sinanbox_t *argv) {
 
 static sinanbox_t sivmfn_prim_math_ldexp(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(2);
-  float x = NANBOX_TOFLOAT(argv[0]);
+  sifloat_t x = NANBOX_TOFLOAT(argv[0]);
   if (!NANBOX_ISINT(argv[1])) {
     sifault(pynter_fault_type);
   }
   int32_t exponent = NANBOX_TOI32(argv[1]);
-  return NANBOX_OFFLOAT(ldexpf(x, exponent));
+  return NANBOX_OFFLOAT(SIFL(ldexp)(x, exponent));
 }
 
 static sinanbox_t sivmfn_prim_math_exp2(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  return NANBOX_OFFLOAT(exp2f(NANBOX_TOFLOAT(*argv)));
+  return NANBOX_OFFLOAT(SIFL(exp2)(NANBOX_TOFLOAT(*argv)));
 }
 
 static sinanbox_t sivmfn_prim_math_gamma(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  return NANBOX_OFFLOAT(tgammaf(NANBOX_TOFLOAT(*argv)));
+  return NANBOX_OFFLOAT(SIFL(tgamma)(NANBOX_TOFLOAT(*argv)));
 }
 
 static sinanbox_t sivmfn_prim_math_lgamma(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  return NANBOX_OFFLOAT(lgammaf(NANBOX_TOFLOAT(*argv)));
+  return NANBOX_OFFLOAT(SIFL(lgamma)(NANBOX_TOFLOAT(*argv)));
 }
 
 // gcd/lcm/comb/factorial/isqrt/perm operate on Python `int`s specifically —
@@ -646,11 +647,12 @@ static sinanbox_t sivmfn_prim_math_lgamma(uint8_t argc, sinanbox_t *argv) {
 // unconditionally, and matching that takes priority over handling ints past
 // pynter's native range, which none of the current test cases exercise
 // anyway.
-static int32_t pynter_gcd_i32(int32_t a, int32_t b) {
+// int64_t, not int32_t: the magnitude of INT32_MIN doesn't fit an int32_t.
+static int64_t pynter_gcd_i64(int64_t a, int64_t b) {
   if (a < 0) a = -a;
   if (b < 0) b = -b;
   while (b != 0) {
-    int32_t t = a % b;
+    int64_t t = a % b;
     a = b;
     b = t;
   }
@@ -658,39 +660,49 @@ static int32_t pynter_gcd_i32(int32_t a, int32_t b) {
 }
 
 static sinanbox_t sivmfn_prim_math_gcd(uint8_t argc, sinanbox_t *argv) {
-  int32_t result = 0;
+  int64_t result = 0;
   for (uint8_t i = 0; i < argc; ++i) {
     if (!NANBOX_ISINT(argv[i])) {
       sifault(pynter_fault_type);
     }
-    result = pynter_gcd_i32(result, NANBOX_TOI32(argv[i]));
+    result = pynter_gcd_i64(result, NANBOX_TOI32(argv[i]));
   }
   // gcd's result is bounded by the smallest input's magnitude, which is
   // itself already a valid small int (NANBOX_ISINT-checked above) -- never
-  // out of NANBOX_WRAP_INT's range, but using it anyway for consistency
-  // with lcm/comb/factorial/isqrt/perm below, all of which can genuinely
-  // overflow it.
+  // out of NANBOX_WRAP_INT's range, except for gcd(INT32_MIN) == 2**31 with
+  // 64-bit NaN-boxing; NANBOX_WRAP_INT is used for consistency with
+  // lcm/comb/factorial/isqrt/perm below, all of which can genuinely overflow
+  // it.
   return NANBOX_WRAP_INT(result);
 }
 
 static sinanbox_t sivmfn_prim_math_lcm(uint8_t argc, sinanbox_t *argv) {
-  // int64_t intermediate: unlike gcd, lcm(a, b) can be as large as a*b,
-  // which can overflow int32_t during the multiply even when the final
-  // result (after dividing by gcd) would fit -- and can also legitimately
-  // exceed NANBOX_INTMAX for larger inputs, unlike gcd.
-  int64_t result = 1;
   for (uint8_t i = 0; i < argc; ++i) {
     if (!NANBOX_ISINT(argv[i])) {
       sifault(pynter_fault_type);
     }
-    int32_t v = NANBOX_TOI32(argv[i]);
+  }
+  // int64_t intermediate: unlike gcd, lcm(a, b) can be as large as a*b,
+  // which can overflow int32_t during the multiply even when the final
+  // result (after dividing by gcd) would fit -- and can also legitimately
+  // exceed NANBOX_INTMAX for larger inputs, unlike gcd. With three or more
+  // large arguments it can even exceed int64_t, in which case the result is
+  // the (approximate) float -- like any Python int past this VM's native
+  // range -- and the remaining arguments no longer matter much.
+  int64_t result = 1;
+  for (uint8_t i = 0; i < argc; ++i) {
+    int64_t v = NANBOX_TOI32(argv[i]);
     if (v < 0) v = -v;
     if (v == 0 || result == 0) {
       result = 0;
       continue;
     }
-    int32_t g = pynter_gcd_i32((int32_t) result, v);
-    result = (result / g) * v;
+    int64_t g = pynter_gcd_i64(result, v);
+    int64_t scaled = result / g;
+    if (scaled > INT64_MAX / v) {
+      return NANBOX_OFFLOAT((sifloat_t) ((double) scaled * (double) v));
+    }
+    result = scaled * v;
   }
   return NANBOX_WRAP_INT(result);
 }
@@ -711,14 +723,20 @@ static sinanbox_t sivmfn_prim_math_comb(uint8_t argc, sinanbox_t *argv) {
   if (k > n - k) {
     k = n - k;
   }
-  // int64_t intermediate: the running product (before dividing by i+1 each
-  // step) can exceed int32_t range well before the final binomial
-  // coefficient does.
-  int64_t result = 1;
-  for (int32_t i = 0; i < k; ++i) {
+  // double intermediate: the running product (before dividing by i+1 each
+  // step) can exceed int32_t (and even int64_t) range well before the final
+  // binomial coefficient does. A double is exact for every step that leads to
+  // a result that fits a small int (the product is then below 2^53), and an
+  // approximate float beyond that -- like factorial below. The loop ends
+  // early once the result is infinite, so that a huge k stays cheap.
+  double result = 1.0;
+  for (int32_t i = 0; i < k && !isinf(result); ++i) {
     result = result * (n - i) / (i + 1);
   }
-  return NANBOX_WRAP_INT(result);
+  if (result >= NANBOX_INTMIN && result <= NANBOX_INTMAX) {
+    return NANBOX_OFINT((int32_t) result);
+  }
+  return NANBOX_OFFLOAT((sifloat_t) result);
 }
 
 static sinanbox_t sivmfn_prim_math_factorial(uint8_t argc, sinanbox_t *argv) {
@@ -730,19 +748,21 @@ static sinanbox_t sivmfn_prim_math_factorial(uint8_t argc, sinanbox_t *argv) {
   if (n < 0) {
     sifault(pynter_fault_value_error);
   }
-  // double intermediate: factorial grows past int32_t range at n=13 and
-  // past NANBOX_INTMAX (2^20-1) even sooner (n=9) -- a double keeps this
-  // exact up to n=18 or so (2^53 mantissa) and an approximate float32
-  // result (via NANBOX_OFFLOAT's fallback below) beyond that, matching how
-  // this VM already approximates any Python int past its native range.
+  // double intermediate: factorial grows past int32_t range at n=13 (and
+  // past NANBOX_INTMAX with PYNTER_NANBOX32, 2^20-1, even sooner, at n=9) --
+  // a double keeps this exact up to n=18 or so (2^53 mantissa) and an
+  // approximate float result (via NANBOX_OFFLOAT's fallback below) beyond
+  // that, matching how this VM already approximates any Python int past its
+  // native range. The loop ends early once the result is infinite, so that a
+  // huge n stays cheap.
   double result = 1.0;
-  for (int32_t i = 2; i <= n; ++i) {
+  for (int32_t i = 2; i <= n && !isinf(result); ++i) {
     result *= i;
   }
   if (result >= NANBOX_INTMIN && result <= NANBOX_INTMAX) {
     return NANBOX_OFINT((int32_t) result);
   }
-  return NANBOX_OFFLOAT((float) result);
+  return NANBOX_OFFLOAT((sifloat_t) result);
 }
 
 static sinanbox_t sivmfn_prim_math_isqrt(uint8_t argc, sinanbox_t *argv) {
@@ -796,13 +816,13 @@ static sinanbox_t sivmfn_prim_math_perm(uint8_t argc, sinanbox_t *argv) {
   }
   // double intermediate, same reasoning as factorial above.
   double result = 1.0;
-  for (int32_t i = 0; i < k; ++i) {
+  for (int32_t i = 0; i < k && !isinf(result); ++i) {
     result *= (n - i);
   }
   if (result >= NANBOX_INTMIN && result <= NANBOX_INTMAX) {
     return NANBOX_OFINT((int32_t) result);
   }
-  return NANBOX_OFFLOAT((float) result);
+  return NANBOX_OFFLOAT((sifloat_t) result);
 }
 
 static sinanbox_t sivmfn_prim_math_hypot(uint8_t argc, sinanbox_t *argv) {
@@ -811,32 +831,32 @@ static sinanbox_t sivmfn_prim_math_hypot(uint8_t argc, sinanbox_t *argv) {
     return NANBOX_OFINT(0);
   }
 
-  float max = 0;
+  sifloat_t max = 0;
   for (unsigned int i = 0; i < argc; ++i) {
     if (NANBOX_IDENTICAL(argv[i], NANBOX_CANONICAL_NAN)) {
       return NANBOX_CANONICAL_NAN;
     }
-    float v = NANBOX_TOFLOAT(argv[i]);
+    sifloat_t v = NANBOX_TOFLOAT(argv[i]);
     if (v > max) {
       max = v;
     }
   }
 
-  if (max == 0.0f) {
+  if (max == 0.0) {
     return NANBOX_OFINT(0);
   }
 
-  float sum = 0;
-  float compensation = 0;
+  sifloat_t sum = 0;
+  sifloat_t compensation = 0;
   for (unsigned int i = 0; i < argc; ++i) {
-    float n = NANBOX_TOFLOAT(argv[i]) / max;
-    float summand = n * n - compensation;
-    float preliminary = sum + summand;
+    sifloat_t n = NANBOX_TOFLOAT(argv[i]) / max;
+    sifloat_t summand = n * n - compensation;
+    sifloat_t preliminary = sum + summand;
     compensation = (preliminary - sum) - summand;
     sum = preliminary;
   }
 
-  return NANBOX_OFFLOAT(sqrtf(sum) * max);
+  return NANBOX_OFFLOAT(SIFL(sqrt)(sum) * max);
 }
 
 static sinanbox_t sivmfn_prim_math_abs(uint8_t argc, sinanbox_t *argv) {
@@ -844,13 +864,13 @@ static sinanbox_t sivmfn_prim_math_abs(uint8_t argc, sinanbox_t *argv) {
   sinanbox_t v = *argv;
 
   if (NANBOX_ISINT(v)) {
-    return NANBOX_WRAP_INT(abs(NANBOX_INT(v)));
+    return NANBOX_WRAP_INT(llabs((long long) NANBOX_INT(v)));
   } else if (NANBOX_ISFLOAT(v)) {
-    return NANBOX_OFFLOAT(fabsf(NANBOX_FLOAT(v)));
+    return NANBOX_OFFLOAT(SIFL(fabs)(NANBOX_FLOAT(v)));
   } else if (NANBOX_ISPTR(v) && siheap_is_complex((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))) {
     // abs(complex) is the modulus, matching misc.ts's Math.hypot(real, imag).
     siheap_complex_t *c = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v);
-    return NANBOX_OFFLOAT(hypotf(c->real, c->imag));
+    return NANBOX_OFFLOAT(SIFL(hypot)(c->real, c->imag));
   }
 
   sifault(pynter_fault_type);
@@ -878,7 +898,11 @@ static sinanbox_t sivmfn_prim_math_clz32(uint8_t argc, sinanbox_t *argv) {
 
 static sinanbox_t sivmfn_prim_math_fround(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
-  // no-op: pynter uses floats not doubles
+  // Rounds a float to single precision. A no-op with PYNTER_NANBOX32, where
+  // floats already are single precision.
+  if (NANBOX_ISFLOAT(*argv)) {
+    return NANBOX_OFFLOAT((sifloat_t) (float) NANBOX_FLOAT(*argv));
+  }
   return *argv;
 }
 
@@ -916,8 +940,8 @@ static sinanbox_t sivmfn_prim_math_max(uint8_t argc, sinanbox_t *argv) {
         max = contender;
       }
     } else if (NANBOX_ISFLOAT(contender) || NANBOX_ISINT(contender)) {
-      float maxf = NANBOX_TOFLOAT(max);
-      float contenderf = NANBOX_TOFLOAT(contender);
+      sifloat_t maxf = NANBOX_TOFLOAT(max);
+      sifloat_t contenderf = NANBOX_TOFLOAT(contender);
       if (contenderf > maxf) {
         max = contender;
       }
@@ -954,8 +978,8 @@ static sinanbox_t sivmfn_prim_math_min(uint8_t argc, sinanbox_t *argv) {
         min = contender;
       }
     } else if (NANBOX_ISFLOAT(contender) || NANBOX_ISINT(contender)) {
-      float minf = NANBOX_TOFLOAT(min);
-      float contenderf = NANBOX_TOFLOAT(contender);
+      sifloat_t minf = NANBOX_TOFLOAT(min);
+      sifloat_t contenderf = NANBOX_TOFLOAT(contender);
       if (contenderf < minf) {
         min = contender;
       }
@@ -968,7 +992,7 @@ static sinanbox_t sivmfn_prim_math_min(uint8_t argc, sinanbox_t *argv) {
 }
 static sinanbox_t sivmfn_prim_math_random(uint8_t argc, sinanbox_t *argv) {
   (void) argc; (void) argv;
-  return NANBOX_OFFLOAT((float) rand() / (((float) RAND_MAX) + 1.0f));
+  return NANBOX_OFFLOAT((sifloat_t) rand() / (((sifloat_t) RAND_MAX) + 1.0));
 }
 
 static sinanbox_t sivmfn_prim_math_sign(uint8_t argc, sinanbox_t *argv) {
@@ -978,8 +1002,8 @@ static sinanbox_t sivmfn_prim_math_sign(uint8_t argc, sinanbox_t *argv) {
     int32_t intv = NANBOX_INT(v);
     return NANBOX_OFINT(intv ? (intv > 0 ? 1 : -1) : 0);
   } else if (NANBOX_ISFLOAT(v)) {
-    float fv = NANBOX_FLOAT(v);
-    return NANBOX_OFINT(fv != 0.0f ? (fv > 0.0f ? 1 : -1) : 0);
+    sifloat_t fv = NANBOX_FLOAT(v);
+    return NANBOX_OFINT(fv != 0.0 ? (fv > 0.0 ? 1 : -1) : 0);
   } else {
     sifault(pynter_fault_type);
   }
@@ -992,7 +1016,7 @@ static sinanbox_t sivmfn_prim_math_sign(uint8_t argc, sinanbox_t *argv) {
   if (NANBOX_ISINT(v)) { \
     return v; \
   } else if (NANBOX_ISFLOAT(v)) { \
-    float retv = name ## f(NANBOX_FLOAT(v)); \
+    sifloat_t retv = SIFL(name)(NANBOX_FLOAT(v)); \
     if (retv >= NANBOX_INTMIN && retv <= NANBOX_INTMAX) { \
       return NANBOX_OFINT((int32_t) retv); \
     } \
@@ -1043,7 +1067,13 @@ static sinanbox_t sivmfn_prim_round(uint8_t argc, sinanbox_t *argv) {
     if (NANBOX_ISINT(x)) {
       return x;
     }
-    return NANBOX_WRAP_INT((int32_t) rintf(NANBOX_FLOAT(x)));
+    // range-checked before converting to an integer, which is undefined
+    // behavior for a float out of the integer's range
+    sifloat_t rounded = SIFL(rint)(NANBOX_FLOAT(x));
+    if (rounded >= NANBOX_INTMIN && rounded <= NANBOX_INTMAX) {
+      return NANBOX_OFINT((int32_t) rounded);
+    }
+    return NANBOX_OFFLOAT(rounded);
   }
 
   int32_t ndigits = NANBOX_INT(argv[1]);
@@ -1051,18 +1081,22 @@ static sinanbox_t sivmfn_prim_round(uint8_t argc, sinanbox_t *argv) {
     if (ndigits >= 0) {
       return x;
     }
-    float scale = powf(10.0f, (float) -ndigits);
-    return NANBOX_WRAP_INT((int32_t) (rintf(NANBOX_TOFLOAT(x) / scale) * scale));
+    sifloat_t scale = SIFL(pow)(10.0, -(sifloat_t) ndigits);
+    sifloat_t rounded = SIFL(rint)(NANBOX_TOFLOAT(x) / scale) * scale;
+    if (rounded >= NANBOX_INTMIN && rounded <= NANBOX_INTMAX) {
+      return NANBOX_OFINT((int32_t) rounded);
+    }
+    return NANBOX_OFFLOAT(rounded);
   }
 
-  float xv = NANBOX_FLOAT(x);
-  float result;
+  sifloat_t xv = NANBOX_FLOAT(x);
+  sifloat_t result;
   if (ndigits >= 0) {
-    float scale = powf(10.0f, (float) ndigits);
-    result = rintf(xv * scale) / scale;
+    sifloat_t scale = SIFL(pow)(10.0, (sifloat_t) ndigits);
+    result = SIFL(rint)(xv * scale) / scale;
   } else {
-    float scale = powf(10.0f, (float) -ndigits);
-    result = rintf(xv / scale) * scale;
+    sifloat_t scale = SIFL(pow)(10.0, -(sifloat_t) ndigits);
+    result = SIFL(rint)(xv / scale) * scale;
   }
   return NANBOX_OFFLOAT(result);
 }
@@ -1149,13 +1183,13 @@ static sinanbox_t str_or_repr(sinanbox_t v, bool is_repr) {
     siheap_complex_t *c = (siheap_complex_t *) SIHEAP_NANBOXTOPTR(v);
     char real_buf[32], imag_buf[32];
     sidisplay_complex_component(imag_buf, sizeof(imag_buf), c->imag);
-    if (c->real == 0.0f) {
+    if (c->real == 0.0) {
       snprintf(buf, sizeof(buf), "%sj", imag_buf);
     } else {
       sidisplay_complex_component(real_buf, sizeof(real_buf), c->real);
       // See display.h's sitype_complex case for why `!= c->imag` (NaN) is
       // ORed in here alongside `>= 0.0f`.
-      bool imag_nonneg_or_nan = c->imag >= 0.0f || c->imag != c->imag;
+      bool imag_nonneg_or_nan = c->imag >= 0.0 || c->imag != c->imag;
       snprintf(buf, sizeof(buf), "(%s%s%sj)", real_buf, (imag_nonneg_or_nan ? "+" : ""), imag_buf);
     }
   } else if (NANBOX_ISPTR(v) && ((siheap_header_t *) SIHEAP_NANBOXTOPTR(v))->type == sitype_function) {
@@ -1423,7 +1457,7 @@ static sinanbox_t sivmfn_prim_build_list(uint8_t argc, sinanbox_t *argv) {
 }
 
 PRIM_ENUM_LIST_FN(int32_t, NANBOX_WRAP_INT(i))
-PRIM_ENUM_LIST_FN(float, NANBOX_OFFLOAT(i))
+PRIM_ENUM_LIST_FN(sifloat_t, NANBOX_OFFLOAT(i))
 
 static sinanbox_t sivmfn_prim_enum_list(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(2);
@@ -1432,15 +1466,15 @@ static sinanbox_t sivmfn_prim_enum_list(uint8_t argc, sinanbox_t *argv) {
       if (NANBOX_ISINT(argv[1])) {
         return enum_list_int32_t(NANBOX_INT(argv[0]), NANBOX_INT(argv[1]));
       } else if (NANBOX_ISFLOAT(argv[1])) {
-        float end = NANBOX_FLOAT(argv[1]);
-        if (end > INT32_MIN && end < (float) INT32_MAX) {
+        sifloat_t end = NANBOX_FLOAT(argv[1]);
+        if (end > INT32_MIN && end < (sifloat_t) INT32_MAX) {
           return enum_list_int32_t(NANBOX_TOI32(argv[0]), (int32_t) end);
         } else {
-          return enum_list_float(NANBOX_INT(argv[0]), end);
+          return enum_list_sifloat_t(NANBOX_INT(argv[0]), end);
         }
       }
   } else if (NANBOX_ISFLOAT(argv[0])) {
-    return enum_list_float(NANBOX_FLOAT(argv[0]), NANBOX_TOFLOAT(argv[1]));
+    return enum_list_sifloat_t(NANBOX_FLOAT(argv[0]), NANBOX_TOFLOAT(argv[1]));
   }
   sifault(pynter_fault_type);
   return NANBOX_OFEMPTY();
@@ -1773,7 +1807,7 @@ static sinanbox_t prim_build_stream_cont(uint8_t argc, sinanbox_t *argv) {
 
   sinanbox_t curv = siexec_nanbox(fn, 1, argv);
   siheap_intcont_t *ic = siintcont_new(prim_build_stream_cont, 3);
-  ic->argv[0] = NANBOX_WRAP_INT(cur + 1);
+  ic->argv[0] = NANBOX_WRAP_INT((int64_t) cur + 1);
   ic->argv[1] = argv[1];
   siheap_refbox(fn);
   ic->argv[2] = fn;
@@ -1802,7 +1836,7 @@ static sinanbox_t sivmfn_prim_enum_stream(uint8_t argc, sinanbox_t *argv) {
 
   siheap_intcont_t *ic = siintcont_new(sivmfn_prim_enum_stream, 2);
   if (NANBOX_ISINT(start)) {
-    ic->argv[0] = NANBOX_WRAP_INT(NANBOX_INT(start) + 1);
+    ic->argv[0] = NANBOX_WRAP_INT((int64_t) NANBOX_INT(start) + 1);
   } else { // note: type checked by the ISINT or TOFLOAT above
     ic->argv[0] = NANBOX_OFFLOAT(NANBOX_FLOAT(start) + 1);
   }
@@ -1857,7 +1891,7 @@ static sinanbox_t sivmfn_prim_integers_from(uint8_t argc, sinanbox_t *argv) {
   sinanbox_t val = argv[0];
   siheap_intcont_t *ic = siintcont_new(sivmfn_prim_integers_from, 1);
   if (NANBOX_ISINT(val)) {
-    ic->argv[0] = NANBOX_WRAP_INT(NANBOX_INT(val) + 1);
+    ic->argv[0] = NANBOX_WRAP_INT((int64_t) NANBOX_INT(val) + 1);
   } else {
     ic->argv[0] = NANBOX_OFFLOAT(NANBOX_TOFLOAT(val) + 1);
   }
@@ -2401,9 +2435,9 @@ static sinanbox_t sivmfn_prim_range(uint8_t argc, sinanbox_t *argv) {
     return NANBOX_OFEMPTY();
   }
   // NANBOX_ISNUMERIC + NANBOX_TOI32, not NANBOX_ISINT + NANBOX_INT: integers
-  // outside the 21-bit small-int range are represented as floats in this
-  // VM, so NANBOX_ISINT alone would wrongly reject an ordinary call like
-  // range(2000000) with a type error. Matches how sivmfn_prim_gen_list/
+  // outside the small-int range are represented as floats in this VM (a
+  // 21-bit range with PYNTER_NANBOX32), so NANBOX_ISINT alone would wrongly
+  // reject an ordinary call like range(2000000) with a type error there. Matches how sivmfn_prim_gen_list/
   // sivmfn_prim_list_ref already accept either representation.
   for (uint8_t i = 0; i < argc; ++i) {
     if (!NANBOX_ISNUMERIC(argv[i])) {
@@ -2513,7 +2547,7 @@ static sinanbox_t sivmfn_prim_time_time(uint8_t argc, sinanbox_t *argv) {
   // esp_timer_get_time(): microseconds since boot, always available (no RTC/
   // SNTP configuration needed) -- boot is close enough to program start here,
   // since ESP-IDF apps have no other workload running before app_main().
-  return NANBOX_OFFLOAT((float) (esp_timer_get_time() / 1000000.0));
+  return NANBOX_OFFLOAT((sifloat_t) (esp_timer_get_time() / 1000000.0));
 #else
   // Native, EV3, WASM (Emscripten's libc backs this with performance.now()/
   // Date.now(), same as any other hosted C11 target): CLOCK_MONOTONIC's own
@@ -2531,7 +2565,7 @@ static sinanbox_t sivmfn_prim_time_time(uint8_t argc, sinanbox_t *argv) {
   }
   double elapsed = (double) (now.tv_sec - start.tv_sec)
     + (double) (now.tv_nsec - start.tv_nsec) / 1e9;
-  return NANBOX_OFFLOAT((float) elapsed);
+  return NANBOX_OFFLOAT((sifloat_t) elapsed);
 #endif
 }
 

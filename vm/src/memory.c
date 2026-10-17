@@ -9,7 +9,7 @@
 #include <pynter/nanbox.h>
 
 #ifdef PYNTER_STATIC_HEAP
-unsigned char siheap[PYNTER_HEAP_SIZE] = { 0 };
+unsigned char siheap[PYNTER_HEAP_SIZE] __attribute__((aligned(8))) = { 0 };
 #else
 unsigned char *siheap = NULL;
 size_t siheap_size = 0;
@@ -207,7 +207,7 @@ static address_t sizeof_strobj(siheap_header_t *obj) {
 
   case sitype_string: {
     siheap_string_t *v = (siheap_string_t *) obj;
-    return v->header.size - sizeof(siheap_string_t) - 1;
+    return v->size - 1;
   }
 
   case sitype_intcont:
@@ -292,7 +292,11 @@ siheap_string_t *sistrpair_flatten(siheap_strpair_t *obj) {
   return string;
 }
 
-siheap_header_t *siheap_mrealloc(siheap_header_t *ent, address_t newsize) {
+siheap_header_t *siheap_mrealloc(siheap_header_t *ent, size_t newsize) {
+  newsize = SIHEAP_ROUNDUP(newsize);
+  if (newsize > PYNTER_HEAP_SIZE) {
+    sifault(pynter_fault_out_of_memory);
+  }
   if (ent->size >= newsize) {
     // we don't support shrinking currently
     return ent;
