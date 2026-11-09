@@ -106,6 +106,9 @@ reason for most of these at the point they're raised (see ["CMake configuration"
 below); every device-specific frontend (the CLI `runner`, the WASM build) additionally prints the
 fault name as part of its own trailer line once the run ends — see e.g. `runner/src/runner.c` or
 `devices/wasm/wasm/lib.c`'s `fault_names`.
+The name of fault 4 in those tables is Python's `RecursionError: maximum recursion depth exceeded`,
+so that a student sees the same error whichever engine runs the program (the limit differs: it is
+the size of the VM stack, `PYNTER_STACK_ENTRIES`).
 
 | # | fault | when it fires | example Python that triggers it |
 |---|---|---|---|
@@ -113,7 +116,7 @@ fault name as part of its own trailer line once the run ends — see e.g. `runne
 | 1 | `out of memory` | the heap (see ["Memory configuration"](#memory-configuration)) is exhausted | `[0] * 10000000` |
 | 2 | `type error` | an operator or primitive is applied to operand(s) of the wrong type; or an `if`/`elif`/`while` condition, or a conditional expression's (ternary's) test, is not a `bool` | `1 + "a"`<br>`if 1:`<br>`    pass` |
 | 3 | `divide by zero` | `/`, `//`, or `%` with a zero divisor | `1 / 0` |
-| 4 | `stack overflow` | the VM call stack is exhausted (e.g. unbounded recursion) | `def f(): return f()`<br>`f()` |
+| 4 | `stack overflow` (printed as `RecursionError: maximum recursion depth exceeded`, as Python does) | the VM call stack is exhausted (e.g. unbounded recursion) | `def f(n):`<br>`    return 1 + f(n + 1)`<br>`f(0)`<br>(not `def f(): return f()`: py-slang compiles a tail call to a jump, which runs in constant space) |
 | 5 | `stack underflow` | the VM pops an empty value stack | not reachable from valid Python — a compiler or hand-crafted-bytecode bug |
 | 6 | `uninitialised load` | reading a global/local/enclosing-scope slot that was declared but never assigned | `def f():`<br>`    global x`<br>`    return x`<br>`f()` |
 | 7 | `invalid load` | loading from a nonexistent enclosing-scope slot | not reachable from valid Python — a compiler bug |

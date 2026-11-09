@@ -58,6 +58,9 @@ add_run_test(prim_integers_from)
 add_run_test(value_prim)
 add_run_test(more_arithmetic)
 add_run_test(no_uninitialised_load)
+# Unbounded recursion (def f(n): return 1 + f(n + 1); print(f(0)), compiled by py-slang) ends in the fault
+# stack overflow, which the runner names as Python's RecursionError, and not in a crash.
+add_run_test(stack_overflow)
 
 # The tests below are retired, not merely disabled: Pynter's mission (see the
 # top-level README) is now specifically "correctly run everything py-slang's

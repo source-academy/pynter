@@ -73,6 +73,16 @@ PYNTER_INLINE sinanbox_t sistack_peek(unsigned int index) {
 }
 
 PYNTER_INLINE void sistack_new(unsigned int size, const opcode_t *return_address, siheap_env_t *return_env) {
+#ifndef PYNTER_DISABLE_CHECKS
+  // The new frame takes one entry (the frame itself) and then the operand stack of the function, which
+  // must fit in what is left of sistack: deep (e.g. unbounded) recursion ends here, as a stack overflow,
+  // and not by writing past the end of sistack. sistack_limit only bounds the operand stack of the
+  // current function, so it cannot catch this.
+  if ((size_t) (sistack + PYNTER_STACK_ENTRIES - sistack_top) < 1 + (size_t) size) {
+    sifault(pynter_fault_stack_overflow);
+  }
+#endif
+
   siheap_frame_t *frame = siframe_new();
   frame->return_address = return_address;
   frame->saved_env = return_env;

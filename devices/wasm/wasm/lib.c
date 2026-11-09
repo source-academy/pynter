@@ -17,7 +17,7 @@ static const char *fault_names[] = {
   "out of memory",
   "type error",
   "divide by zero",
-  "stack overflow",
+  "RecursionError: maximum recursion depth exceeded", // stack overflow: what Python (and py-slang) call it
   "stack underflow",
   "uninitialised load",
   "invalid load",
