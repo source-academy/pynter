@@ -619,6 +619,89 @@ static sinanbox_t sivmfn_prim_math_ldexp(uint8_t argc, sinanbox_t *argv) {
   return NANBOX_OFFLOAT(SIFL(ldexp)(x, exponent));
 }
 
+/* math_nextafter and math_ulp, after CPython (3.12 and later, where nextafter takes `steps`).
+ *
+ * The doubles (or floats, with PYNTER_NANBOX32) are put in order by the position of their bits: the
+ * position of the neighbours of a float differs by one, and +0 and -0 are both at 0. That makes
+ * `steps` an addition. py-slang has the same, on JavaScript numbers (src/stdlib/floatSteps.ts). */
+#ifdef PYNTER_NANBOX32
+typedef uint32_t sifloat_bits_t;
+#define SIFLOAT_SIGN_BIT UINT32_C(0x80000000)
+#else
+typedef uint64_t sifloat_bits_t;
+#define SIFLOAT_SIGN_BIT UINT64_C(0x8000000000000000)
+#endif
+
+static int64_t float_position(sifloat_t x) {
+  sifloat_bits_t bits;
+  memcpy(&bits, &x, sizeof bits);
+  int64_t magnitude = (int64_t)(bits & ~SIFLOAT_SIGN_BIT);
+  return (bits & SIFLOAT_SIGN_BIT) ? -magnitude : magnitude;
+}
+
+static sifloat_t float_at_position(int64_t position) {
+  sifloat_bits_t bits = position >= 0
+    ? (sifloat_bits_t)position
+    : ((sifloat_bits_t)(-position) | SIFLOAT_SIGN_BIT);
+  sifloat_t x;
+  memcpy(&x, &bits, sizeof x);
+  return x;
+}
+
+/* The float `steps` (not negative) steps after x towards y; y if x is y, or if fewer steps are needed. */
+static sifloat_t float_nextafter(sifloat_t x, sifloat_t y, int64_t steps) {
+  if (isnan(x)) return x;
+  if (isnan(y)) return y;
+  if (steps == 0) return x;
+  if (x == y) return y;
+  int64_t from = float_position(x);
+  int64_t to = float_position(y);
+  /* Unsigned: the distance between the two ends can exceed INT64_MAX. */
+  uint64_t distance = to > from ? (uint64_t)to - (uint64_t)from : (uint64_t)from - (uint64_t)to;
+  if ((uint64_t)steps >= distance) return y;
+  int64_t result = to > from ? from + steps : from - steps;
+  /* Reaching zero from below gives -0, as in CPython: the sign is that of the side it comes from. */
+  if (result == 0 && from < 0) return -(sifloat_t)0.0;
+  return float_at_position(result);
+}
+
+static sinanbox_t sivmfn_prim_math_nextafter(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(2);
+  /* Optional third argument: more than that is an error, as in CSE (see CHECK_ARGC_EXACT). */
+  if (argc > 3) {
+    sifault(pynter_fault_function_arity);
+    return NANBOX_OFEMPTY();
+  }
+  sifloat_t x = NANBOX_TOFLOAT(argv[0]);
+  sifloat_t y = NANBOX_TOFLOAT(argv[1]);
+  int64_t steps = 1;
+  if (argc >= 3) {
+    if (!NANBOX_ISINT(argv[2])) {
+      sifault(pynter_fault_type);
+    }
+    steps = NANBOX_TOI32(argv[2]);
+    if (steps < 0) {
+      sifault(pynter_fault_value_error);
+    }
+  }
+  return NANBOX_OFFLOAT(float_nextafter(x, y, steps));
+}
+
+static sinanbox_t sivmfn_prim_math_ulp(uint8_t argc, sinanbox_t *argv) {
+  CHECK_ARGC(1);
+  sifloat_t x = NANBOX_TOFLOAT(*argv);
+  if (isnan(x)) {
+    return NANBOX_OFFLOAT(x);
+  }
+  sifloat_t magnitude = SIFL(fabs)(x);
+  if (isinf(magnitude)) {
+    return NANBOX_OFFLOAT(magnitude);
+  }
+  sifloat_t next = float_nextafter(magnitude, (sifloat_t)INFINITY, 1);
+  /* The largest float has no next one: the distance to the previous one is used. */
+  return NANBOX_OFFLOAT(isinf(next) ? magnitude - float_nextafter(magnitude, 0, 1) : next - magnitude);
+}
+
 static sinanbox_t sivmfn_prim_math_exp2(uint8_t argc, sinanbox_t *argv) {
   CHECK_ARGC(1);
   return NANBOX_OFFLOAT(SIFL(exp2)(NANBOX_TOFLOAT(*argv)));
@@ -2769,10 +2852,9 @@ sivmfnptr_t sivmfn_primitives[] = {
   // (pynter#28).
   // 127: print_llist, now implemented natively (see sivmfn_prim_print_llist
   // above) — previously a sivmfn_prim_unimpl stub (see pynter#5).
-  // 128-130: math_nextafter/math_ulp/input — genuinely unimplemented
-  // (math_nextafter/math_ulp aren't implemented on the CSE side either, see
-  // math.ts; input needs async stdin wiring this VM doesn't have).
-  sivmfn_prim_time_time, sivmfn_prim_print_llist, sivmfn_prim_unimpl, sivmfn_prim_unimpl, // 126-129
+  // 128-129: math_nextafter/math_ulp (pynter#62), as in py-slang's stdlib.
+  // 130: input — genuinely unimplemented (it needs async stdin wiring this VM doesn't have).
+  sivmfn_prim_time_time, sivmfn_prim_print_llist, sivmfn_prim_math_nextafter, sivmfn_prim_math_ulp, // 126-129
   sivmfn_prim_unimpl, // 130
   sivmfn_prim_range, // 131
   // 132-134: breakpoint, set_timeout, clear_all_timeout -- deliberate no-ops (see
