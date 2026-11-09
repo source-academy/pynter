@@ -650,9 +650,10 @@ static sifloat_t float_at_position(int64_t position) {
 
 /* The float `steps` (not negative) steps after x towards y; y if x is y, or if fewer steps are needed. */
 static sifloat_t float_nextafter(sifloat_t x, sifloat_t y, int64_t steps) {
+  /* No step is no step, even towards NaN (CPython: math.nextafter(1.0, nan, steps=0) is 1.0). */
+  if (steps == 0) return x;
   if (isnan(x)) return x;
   if (isnan(y)) return y;
-  if (steps == 0) return x;
   if (x == y) return y;
   int64_t from = float_position(x);
   int64_t to = float_position(y);
